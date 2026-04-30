@@ -60,6 +60,7 @@
         </div>
         <div class="section-header">
           <h3>Letzte Rechnungen</h3>
+          <button class="btn btn-small" onclick="importPDFInvoices()">📥 PDFs importieren</button>
         </div>
         <table class="data-table" id="invoices-table">
           <thead>
@@ -363,6 +364,22 @@
         </form>
       </section>
     </main>
+  </div>
+
+  <!-- Import Modal -->
+  <div class="modal" id="import-modal">
+    <div class="modal-content" style="max-width:700px;max-height:80vh;overflow-y:auto;">
+      <div class="modal-header">
+        <h3>PDF-Import Vorschau</h3>
+        <button class="btn-close" onclick="closeImportModal()">&times;</button>
+      </div>
+      <p style="color:var(--text-secondary);margin-bottom:16px;">Erkannte Daten aus den PDFs. Bitte prüfe die Einträge vor dem Import.</p>
+      <div id="import-preview"></div>
+      <div class="form-actions" style="margin-top:16px;">
+        <button class="btn btn-primary" onclick="confirmImport()">Alle importieren</button>
+        <button class="btn btn-ghost" onclick="closeImportModal()">Abbrechen</button>
+      </div>
+    </div>
   </div>
 
   <!-- Toast Notification -->

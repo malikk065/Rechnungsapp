@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('api', {
   getDataPath: () => ipcRenderer.invoke('dataPath:get'),
   chooseDataPath: () => ipcRenderer.invoke('dataPath:choose'),
 
+  // PDF Import
+  importPDFs: () => ipcRenderer.invoke('pdf:import'),
+
   // Font
   loadFont: (fontName) => ipcRenderer.invoke('font:load', fontName),
 });

@@ -17,25 +17,33 @@
       "preload.js",
       "src/**/*",
       "node_modules/pdf-lib/dist/pdf-lib.min.js",
+      "node_modules/pdf-parse/**/*",
       "build/icon.png"
     ],
     "mac": {
       "target": {
         "target": "dmg",
-        "arch": ["x64", "arm64"]
+        "arch": [
+          "x64",
+          "arm64"
+        ]
       },
       "category": "public.app-category.finance"
     },
     "win": {
       "target": {
         "target": "nsis",
-        "arch": ["x64"]
+        "arch": [
+          "x64"
+        ]
       }
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerLanguages": ["de_DE"],
+      "installerLanguages": [
+        "de_DE"
+      ],
       "language": "1031"
     }
   },
@@ -43,7 +51,8 @@
   "author": "",
   "license": "UNLICENSED",
   "dependencies": {
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "electron": "^35.0.0",
