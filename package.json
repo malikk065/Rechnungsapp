@@ -11,11 +11,13 @@
   "build": {
     "appId": "com.rechnungsapp.desktop",
     "productName": "Rechnungsapp",
+    "icon": "build/icon",
     "files": [
       "main.js",
       "preload.js",
       "src/**/*",
-      "node_modules/pdf-lib/dist/pdf-lib.min.js"
+      "node_modules/pdf-lib/dist/pdf-lib.min.js",
+      "build/icon.png"
     ],
     "mac": {
       "target": {
