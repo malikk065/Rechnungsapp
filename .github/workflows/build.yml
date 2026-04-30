@@ -1,0 +1,83 @@
+name: Build Rechnungsapp
+
+on:
+  push:
+    tags:
+      - 'v*'          # Trigger bei Tags wie v1.0.0
+  workflow_dispatch:  # Manuell auslösen möglich
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Dependencies installieren
+        run: npm install
+
+      - name: Windows App bauen (.exe Installer)
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Windows Build hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rechnungsapp-Windows
+          path: dist/*.exe
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Dependencies installieren
+        run: npm install
+
+      - name: macOS App bauen (.dmg)
+        run: npm run build:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: macOS Build hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rechnungsapp-macOS
+          path: dist/*.dmg
+
+  release:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Windows Artifact herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: Rechnungsapp-Windows
+          path: dist/
+
+      - name: macOS Artifact herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: Rechnungsapp-macOS
+          path: dist/
+
+      - name: GitHub Release erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

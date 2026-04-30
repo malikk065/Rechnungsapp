@@ -1,0 +1,29 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  // Settings
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  uploadLogo: () => ipcRenderer.invoke('settings:uploadLogo'),
+  getLogo: () => ipcRenderer.invoke('settings:getLogo'),
+  readLogoBase64: (logoPath) => ipcRenderer.invoke('settings:readLogoBase64', logoPath),
+
+  // Customers
+  getCustomers: () => ipcRenderer.invoke('customers:getAll'),
+  saveCustomers: (customers) => ipcRenderer.invoke('customers:save', customers),
+
+  // Invoices
+  getInvoices: () => ipcRenderer.invoke('invoices:getAll'),
+  saveInvoices: (invoices) => ipcRenderer.invoke('invoices:save', invoices),
+
+  // PDF
+  savePDF: (pdfBytes, invoiceNumber) => ipcRenderer.invoke('pdf:save', Array.from(pdfBytes), invoiceNumber),
+  saveAutoPDF: (pdfBytes, invoiceNumber) => ipcRenderer.invoke('pdf:saveAuto', Array.from(pdfBytes), invoiceNumber),
+
+  // Data Path
+  getDataPath: () => ipcRenderer.invoke('dataPath:get'),
+  chooseDataPath: () => ipcRenderer.invoke('dataPath:choose'),
+
+  // Font
+  loadFont: (fontName) => ipcRenderer.invoke('font:load', fontName),
+});

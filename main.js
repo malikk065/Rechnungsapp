@@ -1,0 +1,326 @@
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+let mainWindow;
+
+// --- OneDrive Pfad-Erkennung ---
+function findOneDrivePath() {
+  const homeDir = os.homedir();
+  const candidates = [];
+
+  if (process.platform === 'darwin') {
+    // macOS: CloudStorage-Ordner
+    const cloudStorage = path.join(homeDir, 'Library', 'CloudStorage');
+    if (fs.existsSync(cloudStorage)) {
+      try {
+        const entries = fs.readdirSync(cloudStorage);
+        for (const entry of entries) {
+          if (entry.toLowerCase().startsWith('onedrive')) {
+            candidates.push(path.join(cloudStorage, entry));
+          }
+        }
+      } catch (_) {}
+    }
+    candidates.push(path.join(homeDir, 'OneDrive'));
+  } else if (process.platform === 'win32') {
+    // Windows: Standard OneDrive-Pfade
+    candidates.push(path.join(homeDir, 'OneDrive'));
+    candidates.push(path.join(homeDir, 'OneDrive - Personal'));
+    // Env-Variable
+    if (process.env.OneDrive) {
+      candidates.push(process.env.OneDrive);
+    }
+    if (process.env.OneDriveConsumer) {
+      candidates.push(process.env.OneDriveConsumer);
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function getDefaultDataPath() {
+  const oneDrive = findOneDrivePath();
+  if (oneDrive) {
+    return path.join(oneDrive, 'Rechnungsapp');
+  }
+  // Fallback: App-lokaler Ordner
+  return path.join(app.getPath('userData'), 'data');
+}
+
+function ensureDataDir(dataPath) {
+  if (!fs.existsSync(dataPath)) {
+    fs.mkdirSync(dataPath, { recursive: true });
+  }
+}
+
+function readJSON(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Fehler beim Lesen:', filePath, e.message);
+  }
+  return null;
+}
+
+function writeJSON(filePath, data) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+// --- Daten-Pfad Management ---
+let currentDataPath = null;
+
+function getDataPath() {
+  if (currentDataPath) return currentDataPath;
+
+  // Versuche gespeicherten Pfad zu laden
+  const configPath = path.join(app.getPath('userData'), 'config.json');
+  const config = readJSON(configPath);
+  if (config && config.dataPath && fs.existsSync(config.dataPath)) {
+    currentDataPath = config.dataPath;
+  } else {
+    currentDataPath = getDefaultDataPath();
+  }
+  ensureDataDir(currentDataPath);
+  return currentDataPath;
+}
+
+function setDataPath(newPath) {
+  currentDataPath = newPath;
+  ensureDataDir(newPath);
+  const configPath = path.join(app.getPath('userData'), 'config.json');
+  writeJSON(configPath, { dataPath: newPath });
+}
+
+// --- App erstellen ---
+function createWindow() {
+  const windowOptions = {
+    width: 1200,
+    height: 800,
+    minWidth: 900,
+    minHeight: 600,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    show: false,
+  };
+
+  // macOS-spezifische Fenster-Optionen
+  if (process.platform === 'darwin') {
+    windowOptions.titleBarStyle = 'hiddenInset';
+    windowOptions.trafficLightPosition = { x: 15, y: 15 };
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
+
+  mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
+}
+
+app.whenReady().then(() => {
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// --- IPC Handlers ---
+
+// Settings
+ipcMain.handle('settings:get', () => {
+  const filePath = path.join(getDataPath(), 'settings.json');
+  return readJSON(filePath) || {
+    company: {
+      name: '',
+      address: '',
+      zip: '',
+      city: '',
+      phone: '',
+      email: '',
+      website: '',
+      taxNumber: '',
+      vatId: '',
+      bankName: '',
+      iban: '',
+      bic: '',
+    },
+    taxMode: 'kleinunternehmer', // oder 'regelbesteuerung'
+    invoicePrefix: 'RE',
+    nextInvoiceNumber: 1,
+    logoPath: '',
+  };
+});
+
+ipcMain.handle('settings:save', (_event, settings) => {
+  const filePath = path.join(getDataPath(), 'settings.json');
+  writeJSON(filePath, settings);
+  return true;
+});
+
+// Logo Upload
+ipcMain.handle('settings:uploadLogo', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Logo auswählen',
+    filters: [{ name: 'Bilder', extensions: ['png', 'jpg', 'jpeg', 'svg'] }],
+    properties: ['openFile'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  const sourcePath = result.filePaths[0];
+  const ext = path.extname(sourcePath);
+  const destPath = path.join(getDataPath(), `logo${ext}`);
+  fs.copyFileSync(sourcePath, destPath);
+  return destPath;
+});
+
+ipcMain.handle('settings:getLogo', () => {
+  const dataPath = getDataPath();
+  const extensions = ['.png', '.jpg', '.jpeg', '.svg'];
+  for (const ext of extensions) {
+    const logoPath = path.join(dataPath, `logo${ext}`);
+    if (fs.existsSync(logoPath)) {
+      return logoPath;
+    }
+  }
+  return null;
+});
+
+ipcMain.handle('settings:readLogoBase64', (_event, logoPath) => {
+  try {
+    if (logoPath && fs.existsSync(logoPath)) {
+      const buffer = fs.readFileSync(logoPath);
+      const ext = path.extname(logoPath).toLowerCase().replace('.', '');
+      const mimeType = ext === 'jpg' ? 'jpeg' : ext;
+      return {
+        data: buffer.toString('base64'),
+        mimeType: `image/${mimeType}`,
+      };
+    }
+  } catch (e) {
+    console.error('Logo-Lesefehler:', e.message);
+  }
+  return null;
+});
+
+// Customers
+ipcMain.handle('customers:getAll', () => {
+  const filePath = path.join(getDataPath(), 'customers.json');
+  return readJSON(filePath) || [];
+});
+
+ipcMain.handle('customers:save', (_event, customers) => {
+  const filePath = path.join(getDataPath(), 'customers.json');
+  writeJSON(filePath, customers);
+  return true;
+});
+
+// Invoices
+ipcMain.handle('invoices:getAll', () => {
+  const filePath = path.join(getDataPath(), 'invoices.json');
+  return readJSON(filePath) || [];
+});
+
+ipcMain.handle('invoices:save', (_event, invoices) => {
+  const filePath = path.join(getDataPath(), 'invoices.json');
+  writeJSON(filePath, invoices);
+  return true;
+});
+
+// PDF automatisch in OneDrive/Daten-Ordner speichern
+ipcMain.handle('pdf:saveAuto', (_event, pdfBytes, invoiceNumber) => {
+  const pdfDir = path.join(getDataPath(), 'PDFs');
+  if (!fs.existsSync(pdfDir)) {
+    fs.mkdirSync(pdfDir, { recursive: true });
+  }
+  const safeNumber = (invoiceNumber || 'Rechnung').replace(/[/\\:*?"<>|]/g, '-');
+  const filePath = path.join(pdfDir, `${safeNumber}.pdf`);
+  const buffer = Buffer.from(pdfBytes);
+  fs.writeFileSync(filePath, buffer);
+  return filePath;
+});
+
+// PDF manuell speichern (Speichern-unter-Dialog)
+ipcMain.handle('pdf:save', async (_event, pdfBytes, invoiceNumber) => {
+  const safeNumber = (invoiceNumber || 'Rechnung').replace(/[/\\:*?"<>|]/g, '-');
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Rechnung speichern',
+    defaultPath: `${safeNumber}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+
+  if (result.canceled) return null;
+
+  const buffer = Buffer.from(pdfBytes);
+  fs.writeFileSync(result.filePath, buffer);
+  return result.filePath;
+});
+
+// Data Path
+ipcMain.handle('dataPath:get', () => {
+  return getDataPath();
+});
+
+ipcMain.handle('dataPath:choose', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Daten-Ordner auswählen',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  const newPath = result.filePaths[0];
+  setDataPath(newPath);
+  return newPath;
+});
+
+// Fonts laden für PDF
+ipcMain.handle('font:load', async (_event, fontName) => {
+  // Versuche System-Fonts zu laden
+  const fontPaths = [];
+  if (process.platform === 'darwin') {
+    fontPaths.push(path.join('/System/Library/Fonts', fontName));
+    fontPaths.push(path.join('/Library/Fonts', fontName));
+    fontPaths.push(path.join(os.homedir(), 'Library/Fonts', fontName));
+  } else if (process.platform === 'win32') {
+    fontPaths.push(path.join('C:\\Windows\\Fonts', fontName));
+  }
+
+  for (const fp of fontPaths) {
+    if (fs.existsSync(fp)) {
+      return fs.readFileSync(fp);
+    }
+  }
+  return null;
+});

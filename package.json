@@ -1,0 +1,50 @@
+{
+  "name": "rechnungsapp",
+  "version": "1.0.0",
+  "description": "Rechnungsapp für Kleingewerbe - Electron Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.rechnungsapp.desktop",
+    "productName": "Rechnungsapp",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "node_modules/pdf-lib/dist/pdf-lib.min.js"
+    ],
+    "mac": {
+      "target": {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      },
+      "category": "public.app-category.finance"
+    },
+    "win": {
+      "target": {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": ["de_DE"],
+      "language": "1031"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}

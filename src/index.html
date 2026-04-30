@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rechnungsapp</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <h1 class="app-title">Rechnungsapp</h1>
+      </div>
+      <ul class="nav-list">
+        <li class="nav-item active" data-tab="dashboard">
+          <span class="nav-icon">&#9776;</span>
+          <span>Dashboard</span>
+        </li>
+        <li class="nav-item" data-tab="new-invoice">
+          <span class="nav-icon">&#43;</span>
+          <span>Neue Rechnung</span>
+        </li>
+        <li class="nav-item" data-tab="customers">
+          <span class="nav-icon">&#128101;</span>
+          <span>Kunden</span>
+        </li>
+        <li class="nav-item" data-tab="settings">
+          <span class="nav-icon">&#9881;</span>
+          <span>Einstellungen</span>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="content">
+      <!-- Dashboard -->
+      <section id="tab-dashboard" class="tab-content active">
+        <div class="tab-header">
+          <h2>Dashboard</h2>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-label">Rechnungen gesamt</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-open">0</div>
+            <div class="stat-label">Offen</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-paid">0</div>
+            <div class="stat-label">Bezahlt</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-revenue">0,00 €</div>
+            <div class="stat-label">Umsatz (bezahlt)</div>
+          </div>
+        </div>
+        <div class="section-header">
+          <h3>Letzte Rechnungen</h3>
+        </div>
+        <table class="data-table" id="invoices-table">
+          <thead>
+            <tr>
+              <th>Nr.</th>
+              <th>Datum</th>
+              <th>Kunde</th>
+              <th>Betrag</th>
+              <th>Status</th>
+              <th>Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="invoices-tbody">
+          </tbody>
+        </table>
+        <div class="empty-state" id="dashboard-empty">
+          <p>Noch keine Rechnungen erstellt.</p>
+          <button class="btn btn-primary" onclick="switchTab('new-invoice')">Erste Rechnung erstellen</button>
+        </div>
+      </section>
+
+      <!-- Neue Rechnung -->
+      <section id="tab-new-invoice" class="tab-content">
+        <div class="tab-header">
+          <h2 id="invoice-form-title">Neue Rechnung</h2>
+        </div>
+        <div class="form" id="invoice-form-wrapper">
+          <input type="hidden" id="invoice-edit-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Kunde</label>
+              <select id="invoice-customer">
+                <option value="">-- Kunde auswählen --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Rechnungsdatum</label>
+              <input type="date" id="invoice-date">
+            </div>
+            <div class="form-group">
+              <label>Zahlungsziel (Tage)</label>
+              <input type="number" id="invoice-due-days" value="14">
+            </div>
+          </div>
+
+          <div class="form-group" id="tax-mode-display">
+            <label>Steuer-Modus: <strong id="current-tax-mode"></strong></label>
+          </div>
+
+          <div class="section-header">
+            <h3>Positionen</h3>
+            <button type="button" class="btn btn-small" onclick="addInvoiceItem()">+ Position</button>
+          </div>
+          <table class="data-table" id="items-table">
+            <thead>
+              <tr>
+                <th style="width:5%">Nr.</th>
+                <th style="width:35%">Beschreibung</th>
+                <th style="width:10%">Menge</th>
+                <th style="width:10%">Einheit</th>
+                <th style="width:12%">Einzelpreis (€)</th>
+                <th style="width:10%" class="tax-col">MwSt %</th>
+                <th style="width:12%">Gesamt (€)</th>
+                <th style="width:6%"></th>
+              </tr>
+            </thead>
+            <tbody id="items-tbody">
+            </tbody>
+          </table>
+
+          <div class="invoice-totals">
+            <div class="total-row">
+              <span>Netto:</span>
+              <span id="total-netto">0,00 €</span>
+            </div>
+            <div class="total-row tax-row" id="mwst-row">
+              <span>MwSt:</span>
+              <span id="total-mwst">0,00 €</span>
+            </div>
+            <div class="total-row total-brutto">
+              <span>Brutto:</span>
+              <span id="total-brutto">0,00 €</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Bemerkungen</label>
+            <textarea id="invoice-notes" rows="3" placeholder="Optionale Bemerkungen zur Rechnung..."></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" onclick="saveInvoice()">Rechnung speichern</button>
+            <button type="button" class="btn" onclick="saveInvoiceAndPDF()">Speichern & PDF exportieren</button>
+            <button type="button" class="btn btn-ghost" onclick="resetInvoiceForm()">Abbrechen</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Kunden -->
+      <section id="tab-customers" class="tab-content">
+        <div class="tab-header">
+          <h2>Kunden</h2>
+          <button class="btn btn-primary" onclick="showCustomerForm()">+ Neuer Kunde</button>
+        </div>
+        <table class="data-table" id="customers-table">
+          <thead>
+            <tr>
+              <th>Name / Firma</th>
+              <th>Adresse</th>
+              <th>E-Mail</th>
+              <th>Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="customers-tbody">
+          </tbody>
+        </table>
+        <div class="empty-state" id="customers-empty">
+          <p>Noch keine Kunden angelegt.</p>
+          <button class="btn btn-primary" onclick="showCustomerForm()">Ersten Kunden anlegen</button>
+        </div>
+
+        <!-- Kunden-Formular Modal -->
+        <div class="modal" id="customer-modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3 id="customer-modal-title">Neuer Kunde</h3>
+              <button class="btn-close" onclick="closeCustomerModal()">&times;</button>
+            </div>
+            <form id="customer-form">
+              <input type="hidden" id="customer-edit-id">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Firma / Name *</label>
+                  <input type="text" id="customer-name" required>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Straße + Nr.</label>
+                  <input type="text" id="customer-street">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:0.3">
+                  <label>PLZ</label>
+                  <input type="text" id="customer-zip">
+                </div>
+                <div class="form-group">
+                  <label>Stadt</label>
+                  <input type="text" id="customer-city">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>E-Mail</label>
+                  <input type="email" id="customer-email">
+                </div>
+                <div class="form-group">
+                  <label>Telefon</label>
+                  <input type="text" id="customer-phone">
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Speichern</button>
+                <button type="button" class="btn btn-ghost" onclick="closeCustomerModal()">Abbrechen</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- Einstellungen -->
+      <section id="tab-settings" class="tab-content">
+        <div class="tab-header">
+          <h2>Einstellungen</h2>
+        </div>
+        <form id="settings-form" class="form">
+          <h3>Unternehmensdaten</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Firmenname *</label>
+              <input type="text" id="settings-company-name" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Straße + Nr.</label>
+              <input type="text" id="settings-address">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:0.3">
+              <label>PLZ</label>
+              <input type="text" id="settings-zip">
+            </div>
+            <div class="form-group">
+              <label>Stadt</label>
+              <input type="text" id="settings-city">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Telefon</label>
+              <input type="text" id="settings-phone">
+            </div>
+            <div class="form-group">
+              <label>E-Mail</label>
+              <input type="email" id="settings-email">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Website</label>
+            <input type="text" id="settings-website">
+          </div>
+
+          <h3>Steuerdaten</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Steuernummer</label>
+              <input type="text" id="settings-tax-number" placeholder="z.B. 12/345/67890">
+            </div>
+            <div class="form-group">
+              <label>USt-IdNr.</label>
+              <input type="text" id="settings-vat-id" placeholder="z.B. DE123456789">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Steuer-Modus</label>
+            <select id="settings-tax-mode">
+              <option value="kleinunternehmer">Kleinunternehmer (§19 UStG) - keine MwSt</option>
+              <option value="regelbesteuerung">Regelbesteuerung - MwSt ausweisen</option>
+            </select>
+          </div>
+
+          <h3>Bankverbindung</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Bank</label>
+              <input type="text" id="settings-bank-name">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>IBAN</label>
+              <input type="text" id="settings-iban" placeholder="DE...">
+            </div>
+            <div class="form-group">
+              <label>BIC</label>
+              <input type="text" id="settings-bic">
+            </div>
+          </div>
+
+          <h3>Rechnungsnummern</h3>
+          <div class="form-row">
+            <div class="form-group" style="flex:0.3">
+              <label>Präfix</label>
+              <input type="text" id="settings-invoice-prefix" value="RE">
+            </div>
+            <div class="form-group" style="flex:0.3">
+              <label>Nächste Nummer</label>
+              <input type="number" id="settings-next-number" min="1" value="1">
+            </div>
+            <div class="form-group">
+              <label>Vorschau</label>
+              <input type="text" id="settings-number-preview" readonly class="input-readonly">
+            </div>
+          </div>
+
+          <h3>Logo</h3>
+          <div class="logo-section">
+            <div class="logo-preview" id="logo-preview">
+              <span class="logo-placeholder">Kein Logo</span>
+            </div>
+            <button type="button" class="btn" onclick="uploadLogo()">Logo hochladen</button>
+          </div>
+
+          <h3>Datenspeicherung</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Daten-Ordner</label>
+              <input type="text" id="settings-data-path" readonly class="input-readonly">
+            </div>
+            <div class="form-group" style="flex:0; padding-top:24px;">
+              <button type="button" class="btn" onclick="chooseDataPath()">Ändern</button>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Einstellungen speichern</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast"></div>
+
+  <script src="../node_modules/pdf-lib/dist/pdf-lib.min.js"></script>
+  <script src="store.js"></script>
+  <script src="pdf-generator.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
