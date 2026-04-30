@@ -306,6 +306,44 @@ ipcMain.handle('dataPath:choose', async () => {
   return newPath;
 });
 
+// PDF Import - Text aus PDFs extrahieren
+ipcMain.handle('pdf:import', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Rechnungs-PDFs importieren',
+    filters: [{ name: 'PDF-Dateien', extensions: ['pdf'] }],
+    properties: ['openFile', 'multiSelections'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  const pdfParse = require('pdf-parse');
+  const imported = [];
+
+  for (const filePath of result.filePaths) {
+    try {
+      const dataBuffer = fs.readFileSync(filePath);
+      const data = await pdfParse(dataBuffer);
+      imported.push({
+        filePath,
+        fileName: path.basename(filePath),
+        text: data.text,
+      });
+    } catch (err) {
+      console.error(`Fehler beim Lesen von ${filePath}:`, err.message);
+      imported.push({
+        filePath,
+        fileName: path.basename(filePath),
+        text: '',
+        error: err.message,
+      });
+    }
+  }
+
+  return imported;
+});
+
 // Fonts laden für PDF
 ipcMain.handle('font:load', async (_event, fontName) => {
   // Versuche System-Fonts zu laden

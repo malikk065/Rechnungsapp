@@ -654,6 +654,284 @@ async function saveSettingsForm() {
   updateInvoiceForm();
 }
 
+// ==========================
+// PDF IMPORT
+// ==========================
+let pendingImports = [];
+
+function parsePDFText(text, fileName) {
+  const result = {
+    fileName,
+    invoiceNumber: '',
+    date: '',
+    customerName: '',
+    customerStreet: '',
+    customerZip: '',
+    customerCity: '',
+    totalAmount: 0,
+    status: 'bezahlt',
+    paymentMethod: 'ueberweisung',
+  };
+
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Rechnungsnummer suchen
+  for (const line of lines) {
+    // Typische Muster: RE-2024-001, Rechnungsnummer: XYZ, Rechnung Nr. XYZ, Invoice #XYZ
+    const reMatch = line.match(/(?:RE|INV|RG|RN)[-\s]?\d{4}[-\s]?\d{1,5}/i);
+    if (reMatch) {
+      result.invoiceNumber = reMatch[0].trim();
+      break;
+    }
+    const numMatch = line.match(/(?:Rechnungsnummer|Rechnung\s*(?:Nr\.?|Nummer)|Invoice\s*(?:#|No\.?|Number))[:\s]*([A-Za-z0-9\-\/]+)/i);
+    if (numMatch) {
+      result.invoiceNumber = numMatch[1].trim();
+      break;
+    }
+  }
+
+  // Datum suchen
+  for (const line of lines) {
+    // DD.MM.YYYY
+    const dateMatch = line.match(/(\d{1,2}\.\d{1,2}\.\d{4})/);
+    if (dateMatch) {
+      const parts = dateMatch[1].split('.');
+      result.date = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+      break;
+    }
+    // YYYY-MM-DD
+    const isoMatch = line.match(/(\d{4}-\d{2}-\d{2})/);
+    if (isoMatch) {
+      result.date = isoMatch[1];
+      break;
+    }
+  }
+
+  // Gesamtbetrag suchen
+  for (const line of lines) {
+    const totalMatch = line.match(/(?:Gesamt|Brutto|Total|Summe|Rechnungsbetrag|Gesamtbetrag)[:\s]*(\d[\d.,]*)\s*€?/i);
+    if (totalMatch) {
+      result.totalAmount = parseFloat(totalMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
+    }
+  }
+  // Fallback: größten €-Betrag nehmen
+  if (result.totalAmount === 0) {
+    let maxAmount = 0;
+    for (const line of lines) {
+      const amounts = line.match(/(\d[\d.,]*)\s*€/g);
+      if (amounts) {
+        for (const a of amounts) {
+          const val = parseFloat(a.replace(/\./g, '').replace(',', '.').replace('€', '').trim()) || 0;
+          if (val > maxAmount) maxAmount = val;
+        }
+      }
+    }
+    result.totalAmount = maxAmount;
+  }
+
+  // Bar bezahlt erkennen
+  if (text.match(/bar\s*(bezahlt|erhalten|entgegengenommen|zahlung)/i)) {
+    result.paymentMethod = 'bar';
+  }
+
+  // Kundenname: Suche nach typischen Positionen
+  // Oft steht der Kundenname nach Absenderzeile und vor "Rechnung"
+  let addressBlock = [];
+  let foundSender = false;
+  let foundInvoice = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Absenderzeile überspringen (kleine Schrift oben, oft mit · getrennt)
+    if (line.includes('·') || line.match(/^(Tel|Fax|Mail|www\.|http)/i)) {
+      foundSender = true;
+      continue;
+    }
+    if (line.match(/^(RECHNUNG|Invoice|Rechnungsnummer|Rechnung\s*Nr)/i)) {
+      foundInvoice = true;
+      break;
+    }
+    // Adressblock: typisch 2-4 Zeilen zwischen Absender und Rechnungstitel
+    if (foundSender && !foundInvoice && line.length > 2 && line.length < 80) {
+      // PLZ + Stadt erkennen
+      const plzMatch = line.match(/^(\d{5})\s+(.+)$/);
+      if (plzMatch) {
+        result.customerZip = plzMatch[1];
+        result.customerCity = plzMatch[2];
+        continue;
+      }
+      // Straße erkennen (enthält Hausnummer)
+      if (line.match(/\d+[a-z]?\s*$/) && !line.match(/^\d{5}/)) {
+        result.customerStreet = line;
+        continue;
+      }
+      // Erster nicht-zugeordneter Eintrag = Kundenname
+      if (!result.customerName && !line.match(/^\d/) && line.length > 2) {
+        result.customerName = line;
+      }
+    }
+  }
+
+  // Fallback: Dateiname als Hinweis
+  if (!result.invoiceNumber) {
+    const fnMatch = fileName.match(/(?:RE|INV|RG)[-_]?\d{4}[-_]?\d{1,5}/i);
+    if (fnMatch) result.invoiceNumber = fnMatch[0].replace(/_/g, '-');
+  }
+
+  return result;
+}
+
+async function importPDFInvoices() {
+  const pdfs = await window.api.importPDFs();
+  if (!pdfs || pdfs.length === 0) return;
+
+  pendingImports = [];
+  for (const pdf of pdfs) {
+    if (pdf.error) {
+      showToast(`Fehler bei ${pdf.fileName}: ${pdf.error}`, 'error');
+      continue;
+    }
+    const parsed = parsePDFText(pdf.text, pdf.fileName);
+    pendingImports.push(parsed);
+  }
+
+  if (pendingImports.length === 0) {
+    showToast('Keine PDFs konnten gelesen werden', 'error');
+    return;
+  }
+
+  renderImportPreview();
+  document.getElementById('import-modal').classList.add('active');
+}
+
+function renderImportPreview() {
+  const container = document.getElementById('import-preview');
+  container.innerHTML = pendingImports.map((imp, i) => `
+    <div class="import-card" style="background:var(--bg-secondary);border-radius:8px;padding:16px;margin-bottom:12px;">
+      <div style="font-weight:600;margin-bottom:8px;">📄 ${escapeHtml(imp.fileName)}</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Rechnungsnummer</label>
+          <input type="text" value="${escapeHtml(imp.invoiceNumber)}" onchange="pendingImports[${i}].invoiceNumber=this.value">
+        </div>
+        <div class="form-group">
+          <label>Datum</label>
+          <input type="date" value="${imp.date}" onchange="pendingImports[${i}].date=this.value">
+        </div>
+        <div class="form-group">
+          <label>Betrag (€)</label>
+          <input type="number" step="0.01" value="${imp.totalAmount}" onchange="pendingImports[${i}].totalAmount=parseFloat(this.value)||0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Kundenname</label>
+          <input type="text" value="${escapeHtml(imp.customerName)}" onchange="pendingImports[${i}].customerName=this.value">
+        </div>
+        <div class="form-group">
+          <label>Straße</label>
+          <input type="text" value="${escapeHtml(imp.customerStreet)}" onchange="pendingImports[${i}].customerStreet=this.value">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:0.3">
+          <label>PLZ</label>
+          <input type="text" value="${escapeHtml(imp.customerZip)}" onchange="pendingImports[${i}].customerZip=this.value">
+        </div>
+        <div class="form-group">
+          <label>Stadt</label>
+          <input type="text" value="${escapeHtml(imp.customerCity)}" onchange="pendingImports[${i}].customerCity=this.value">
+        </div>
+        <div class="form-group">
+          <label>Zahlungsart</label>
+          <select onchange="pendingImports[${i}].paymentMethod=this.value">
+            <option value="ueberweisung" ${imp.paymentMethod==='ueberweisung'?'selected':''}>Überweisung</option>
+            <option value="bar" ${imp.paymentMethod==='bar'?'selected':''}>Bar bezahlt</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('active');
+  pendingImports = [];
+}
+
+async function confirmImport() {
+  let importCount = 0;
+
+  for (const imp of pendingImports) {
+    if (!imp.invoiceNumber && !imp.customerName) continue;
+
+    // Kunde anlegen oder bestehenden finden
+    let customerId = null;
+    if (imp.customerName) {
+      const existing = store.customers.find(c =>
+        c.name.toLowerCase() === imp.customerName.toLowerCase()
+      );
+      if (existing) {
+        customerId = existing.id;
+      } else {
+        const newCustomer = store.addCustomer({
+          name: imp.customerName,
+          street: imp.customerStreet,
+          zip: imp.customerZip,
+          city: imp.customerCity,
+          email: '',
+          phone: '',
+        });
+        customerId = newCustomer.id;
+      }
+    }
+
+    // Prüfen ob RE-Nr schon existiert
+    const existingInvoice = store.invoices.find(inv => inv.number === imp.invoiceNumber);
+    if (existingInvoice) continue;
+
+    // Rechnung anlegen
+    const invoiceData = {
+      customerId: customerId,
+      date: imp.date || new Date().toISOString().split('T')[0],
+      dueDays: 14,
+      paymentMethod: imp.paymentMethod,
+      notes: `Importiert aus: ${imp.fileName}`,
+      items: [{
+        description: 'Importierte Position',
+        quantity: 1,
+        unit: 'Stk.',
+        price: imp.totalAmount,
+        taxRate: 19,
+      }],
+      taxMode: store.settings.taxMode,
+      status: imp.status,
+    };
+
+    // Rechnung mit eigener Nummer erstellen (nicht auto-generiert)
+    const invoice = {
+      id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+      number: imp.invoiceNumber || await store.getNextInvoiceNumber(),
+      ...invoiceData,
+      createdAt: new Date().toISOString(),
+    };
+
+    store.invoices.push(invoice);
+    importCount++;
+  }
+
+  if (importCount > 0) {
+    await store.saveInvoices();
+    renderDashboard();
+    renderCustomersList();
+    showToast(`${importCount} Rechnung(en) importiert`, 'success');
+  } else {
+    showToast('Keine neuen Rechnungen importiert', 'error');
+  }
+
+  closeImportModal();
+}
+
 // --- Helpers ---
 function escapeHtml(str) {
   if (!str) return '';
