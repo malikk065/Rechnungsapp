@@ -164,6 +164,7 @@ function editInvoice(id) {
   document.getElementById('invoice-date').value = inv.date || '';
   document.getElementById('invoice-due-days').value = inv.dueDays || 14;
   document.getElementById('invoice-notes').value = inv.notes || '';
+  document.getElementById('invoice-payment-method').value = inv.paymentMethod || 'ueberweisung';
 
   currentInvoiceItems = JSON.parse(JSON.stringify(inv.items || []));
   renderInvoiceItems();
@@ -319,6 +320,7 @@ function resetInvoiceForm() {
     .toISOString()
     .split('T')[0];
   document.getElementById('invoice-due-days').value = '14';
+  document.getElementById('invoice-payment-method').value = 'ueberweisung';
   document.getElementById('invoice-notes').value = '';
   currentInvoiceItems = [];
   addInvoiceItem();
@@ -330,6 +332,7 @@ function collectInvoiceData() {
     customerId: document.getElementById('invoice-customer').value,
     date: document.getElementById('invoice-date').value,
     dueDays: parseInt(document.getElementById('invoice-due-days').value) || 14,
+    paymentMethod: document.getElementById('invoice-payment-method').value,
     notes: document.getElementById('invoice-notes').value,
     items: currentInvoiceItems.filter((item) => item.description.trim() !== ''),
     taxMode: store.settings.taxMode,

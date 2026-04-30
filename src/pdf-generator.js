@@ -410,33 +410,63 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   // Zahlungshinweis
   // =====================
   y -= 10;
-  const paymentText = `Bitte überweisen Sie den Betrag von ${formatCurrencyPDF(totals.brutto)} bis zum ${formatDateForPDF(addDays(invoice.date, invoice.dueDays || 14))} auf folgendes Konto:`;
-  page.drawText(paymentText, {
-    x: marginLeft,
-    y,
-    size: 9,
-    font: fontRegular,
-    color: black,
-  });
-  y -= 20;
 
-  // Bankdaten
-  if (settings.company.bankName || settings.company.iban) {
-    const bankInfo = [
-      settings.company.bankName ? `Bank: ${settings.company.bankName}` : '',
-      settings.company.iban ? `IBAN: ${settings.company.iban}` : '',
-      settings.company.bic ? `BIC: ${settings.company.bic}` : '',
-    ].filter(Boolean);
+  if (invoice.paymentMethod === 'bar') {
+    // Bar bezahlt - kein Überweisungshinweis
+    page.drawText('Zahlungsart: Bar bezahlt', {
+      x: marginLeft,
+      y,
+      size: 10,
+      font: fontBold,
+      color: black,
+    });
+    y -= 16;
+    page.drawText(`Der Betrag von ${formatCurrencyPDF(totals.brutto)} wurde bar entgegengenommen.`, {
+      x: marginLeft,
+      y,
+      size: 9,
+      font: fontRegular,
+      color: black,
+    });
+    y -= 14;
+    page.drawText(`Datum: ${formatDateForPDF(invoice.date)}`, {
+      x: marginLeft,
+      y,
+      size: 9,
+      font: fontRegular,
+      color: black,
+    });
+    y -= 20;
+  } else {
+    // Überweisung - Standard-Zahlungshinweis
+    const paymentText = `Bitte überweisen Sie den Betrag von ${formatCurrencyPDF(totals.brutto)} bis zum ${formatDateForPDF(addDays(invoice.date, invoice.dueDays || 14))} auf folgendes Konto:`;
+    page.drawText(paymentText, {
+      x: marginLeft,
+      y,
+      size: 9,
+      font: fontRegular,
+      color: black,
+    });
+    y -= 20;
 
-    for (const line of bankInfo) {
-      page.drawText(line, {
-        x: marginLeft,
-        y,
-        size: 9,
-        font: fontRegular,
-        color: black,
-      });
-      y -= 14;
+    // Bankdaten
+    if (settings.company.bankName || settings.company.iban) {
+      const bankInfo = [
+        settings.company.bankName ? `Bank: ${settings.company.bankName}` : '',
+        settings.company.iban ? `IBAN: ${settings.company.iban}` : '',
+        settings.company.bic ? `BIC: ${settings.company.bic}` : '',
+      ].filter(Boolean);
+
+      for (const line of bankInfo) {
+        page.drawText(line, {
+          x: marginLeft,
+          y,
+          size: 9,
+          font: fontRegular,
+          color: black,
+        });
+        y -= 14;
+      }
     }
   }
 
