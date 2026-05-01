@@ -30,6 +30,9 @@ async function initApp() {
   await store.loadInvoices();
   savedItems = await window.api.getSavedItems() || [];
 
+  // Lokale Daten nach Firebase synchronisieren
+  await syncToFirebase();
+
   setupNavigation();
   setupForms();
   renderDashboard();
@@ -38,6 +41,67 @@ async function initApp() {
   updateInvoiceForm();
   updateNumberPreview();
   updatePasswordStatus();
+}
+
+async function syncToFirebase() {
+  if (typeof db === 'undefined') return;
+
+  try {
+    // Settings hochladen
+    if (store.settings && store.settings.company && store.settings.company.name) {
+      await db.collection('app').doc('settings').set(store.settings);
+    }
+
+    // Kunden hochladen (nur wenn Firebase leer ist oder weniger Daten hat)
+    const fbCustomers = await db.collection('customers').get();
+    if (fbCustomers.empty && store.customers.length > 0) {
+      console.log('Sync: Lade', store.customers.length, 'Kunden nach Firebase hoch...');
+      const batch = db.batch();
+      for (const c of store.customers) {
+        batch.set(db.collection('customers').doc(c.id), c);
+      }
+      await batch.commit();
+    } else if (!fbCustomers.empty && store.customers.length === 0) {
+      // Firebase hat Daten, lokal leer → von Firebase laden
+      store.customers = fbCustomers.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (window.api) await window.api.saveCustomers(store.customers);
+    }
+
+    // Rechnungen hochladen
+    const fbInvoices = await db.collection('invoices').get();
+    if (fbInvoices.empty && store.invoices.length > 0) {
+      console.log('Sync: Lade', store.invoices.length, 'Rechnungen nach Firebase hoch...');
+      // Firestore batch limit ist 500, also aufteilen
+      for (let i = 0; i < store.invoices.length; i += 400) {
+        const batch = db.batch();
+        const chunk = store.invoices.slice(i, i + 400);
+        for (const inv of chunk) {
+          batch.set(db.collection('invoices').doc(inv.id), inv);
+        }
+        await batch.commit();
+      }
+    } else if (!fbInvoices.empty && store.invoices.length === 0) {
+      store.invoices = fbInvoices.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (window.api) await window.api.saveInvoices(store.invoices);
+    }
+
+    // Saved Items hochladen
+    if (savedItems.length > 0) {
+      await db.collection('app').doc('savedItems').set({ items: savedItems });
+    }
+
+    // Passwort synchronisieren
+    if (window.api) {
+      const localHash = await window.api.getPasswordHash();
+      if (localHash) {
+        await db.collection('app').doc('auth').set({ hash: localHash });
+      }
+    }
+
+    console.log('Firebase Sync abgeschlossen');
+  } catch (e) {
+    console.warn('Firebase Sync Fehler:', e);
+  }
 }
 
 // --- Navigation ---
