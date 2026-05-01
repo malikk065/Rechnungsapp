@@ -266,7 +266,20 @@ ipcMain.handle('pdf:saveAuto', (_event, pdfBytes, invoiceNumber) => {
   const safeNumber = (invoiceNumber || 'Rechnung').replace(/[/\\:*?"<>|]/g, '-');
   const filePath = path.join(pdfDir, `${safeNumber}.pdf`);
   const buffer = Buffer.from(pdfBytes);
-  fs.writeFileSync(filePath, buffer);
+
+  try {
+    // Existierende Datei erst löschen (OneDrive-Sperre umgehen)
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    fs.writeFileSync(filePath, buffer);
+  } catch (e) {
+    // Fallback: mit Zeitstempel speichern wenn gesperrt
+    const timestamp = Date.now();
+    const fallbackPath = path.join(pdfDir, `${safeNumber}_${timestamp}.pdf`);
+    fs.writeFileSync(fallbackPath, buffer);
+    return fallbackPath;
+  }
   return filePath;
 });
 
