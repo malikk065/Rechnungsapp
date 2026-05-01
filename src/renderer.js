@@ -1,14 +1,34 @@
 // --- App State ---
 let currentInvoiceItems = [];
 let editingInvoiceId = null;
+let savedItems = [];
+let darkMode = false;
 
 // --- Init ---
 document.addEventListener('DOMContentLoaded', async () => {
   // Plattform-Klasse setzen für CSS
   document.body.parentElement.classList.add(`platform-${navigator.platform.includes('Mac') ? 'darwin' : 'win32'}`);
+
+  // Dark Mode laden
+  darkMode = await window.api.getDarkMode();
+  applyDarkMode();
+
+  // Passwortschutz prüfen
+  const hasPassword = await window.api.getPasswordHash();
+  if (hasPassword) {
+    document.getElementById('password-overlay').style.display = 'flex';
+    document.getElementById('password-input').focus();
+    return; // App erst nach Passwort-Eingabe laden
+  }
+
+  await initApp();
+});
+
+async function initApp() {
   await store.loadSettings();
   await store.loadCustomers();
   await store.loadInvoices();
+  savedItems = await window.api.getSavedItems() || [];
 
   setupNavigation();
   setupForms();
@@ -17,7 +37,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderSettingsForm();
   updateInvoiceForm();
   updateNumberPreview();
-});
+  updatePasswordStatus();
+}
 
 // --- Navigation ---
 function setupNavigation() {
@@ -120,16 +141,18 @@ function renderDashboard() {
           ? 'badge-cancelled'
           : 'badge-open';
 
+      const isGutschrift = inv.type === 'gutschrift';
       return `<tr>
       <td><strong>${inv.number}</strong></td>
       <td>${formatDate(inv.date)}</td>
       <td>${customer ? customer.name : 'Unbekannt'}</td>
-      <td>${formatCurrency(totals.brutto)}</td>
-      <td><span class="badge ${statusClass}">${inv.status}</span></td>
+      <td>${isGutschrift ? '-' : ''}${formatCurrency(totals.brutto)}</td>
+      <td><span class="badge ${isGutschrift ? 'badge-credit' : statusClass}">${isGutschrift ? 'Gutschrift' : inv.status}</span></td>
       <td>
         <button class="btn-icon" title="PDF exportieren" onclick="exportInvoicePDF('${inv.id}')">&#128196;</button>
         <button class="btn-icon" title="Bearbeiten" onclick="editInvoice('${inv.id}')">&#9998;</button>
         <button class="btn-icon" title="Status ändern" onclick="toggleInvoiceStatus('${inv.id}')">&#10003;</button>
+        ${!isGutschrift ? `<button class="btn-icon" title="Gutschrift erstellen" onclick="createGutschrift('${inv.id}')">↩</button>` : ''}
         <button class="btn-icon" title="Löschen" onclick="deleteInvoice('${inv.id}')">&#128465;</button>
       </td>
     </tr>`;
@@ -588,6 +611,8 @@ async function renderSettingsForm() {
   // Logo
   await renderLogoPreview();
   updateNumberPreview();
+  renderSavedItemsList();
+  updatePasswordStatus();
 }
 
 async function renderLogoPreview() {
@@ -652,6 +677,214 @@ async function saveSettingsForm() {
   await store.saveSettings(settings);
   showToast('Einstellungen gespeichert', 'success');
   updateInvoiceForm();
+}
+
+// ==========================
+// PASSWORD
+// ==========================
+async function simpleHash(str) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function checkPassword() {
+  const input = document.getElementById('password-input').value;
+  const storedHash = await window.api.getPasswordHash();
+  const inputHash = await simpleHash(input);
+
+  if (inputHash === storedHash) {
+    document.getElementById('password-overlay').style.display = 'none';
+    await initApp();
+  } else {
+    document.getElementById('password-error').style.display = 'block';
+    document.getElementById('password-input').value = '';
+    document.getElementById('password-input').focus();
+  }
+}
+
+async function setAppPassword() {
+  const pw = document.getElementById('settings-password').value.trim();
+  if (!pw) {
+    showToast('Bitte ein Passwort eingeben', 'error');
+    return;
+  }
+  const hash = await simpleHash(pw);
+  await window.api.setPasswordHash(hash);
+  document.getElementById('settings-password').value = '';
+  updatePasswordStatus();
+  showToast('Passwort gesetzt', 'success');
+}
+
+async function removeAppPassword() {
+  await window.api.setPasswordHash(null);
+  updatePasswordStatus();
+  showToast('Passwort entfernt', 'success');
+}
+
+async function updatePasswordStatus() {
+  const hash = await window.api.getPasswordHash();
+  const label = document.getElementById('password-status-label');
+  if (label) {
+    label.textContent = hash ? 'Passwort: ✅ aktiv' : 'Passwort: nicht gesetzt';
+  }
+}
+
+// ==========================
+// DARK MODE
+// ==========================
+function applyDarkMode() {
+  document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+  const icon = document.getElementById('dark-mode-icon');
+  const label = document.getElementById('dark-mode-label');
+  if (icon) icon.textContent = darkMode ? '☀️' : '🌙';
+  if (label) label.textContent = darkMode ? 'Hellmodus' : 'Dunkelmodus';
+}
+
+async function toggleDarkMode() {
+  darkMode = !darkMode;
+  applyDarkMode();
+  await window.api.setDarkMode(darkMode);
+}
+
+// ==========================
+// SEARCH / FILTER
+// ==========================
+function filterInvoices() {
+  const query = document.getElementById('search-invoices').value.toLowerCase().trim();
+  const rows = document.querySelectorAll('#invoices-tbody tr');
+
+  rows.forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = text.includes(query) ? '' : 'none';
+  });
+}
+
+function filterCustomers() {
+  const query = document.getElementById('search-customers').value.toLowerCase().trim();
+  const rows = document.querySelectorAll('#customers-tbody tr');
+
+  rows.forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = text.includes(query) ? '' : 'none';
+  });
+}
+
+// ==========================
+// GUTSCHRIFT
+// ==========================
+async function createGutschrift(invoiceId) {
+  const inv = store.getInvoice(invoiceId);
+  if (!inv) return;
+
+  if (!confirm(`Gutschrift für Rechnung ${inv.number} erstellen?`)) return;
+
+  const gutschriftData = {
+    customerId: inv.customerId,
+    date: new Date().toISOString().split('T')[0],
+    dueDays: 0,
+    paymentMethod: inv.paymentMethod || 'ueberweisung',
+    notes: `Gutschrift zu Rechnung ${inv.number}`,
+    items: inv.items.map(item => ({ ...item })),
+    taxMode: inv.taxMode || store.settings.taxMode,
+    type: 'gutschrift',
+    relatedInvoice: inv.number,
+  };
+
+  const gutschrift = await store.addInvoice(gutschriftData);
+  // Type muss nach addInvoice gesetzt werden (addInvoice setzt status auf 'offen')
+  gutschrift.type = 'gutschrift';
+  gutschrift.status = 'gutschrift';
+  // Nummer anpassen: GS statt RE
+  gutschrift.number = gutschrift.number.replace(/^RE/, 'GS');
+  await store.saveInvoices();
+
+  // PDF automatisch erstellen
+  await exportInvoicePDF(gutschrift.id, true);
+
+  renderDashboard();
+  showToast(`Gutschrift ${gutschrift.number} erstellt`, 'success');
+}
+
+// ==========================
+// SAVED ITEMS (Gespeicherte Positionen)
+// ==========================
+function renderSavedItemsList() {
+  const container = document.getElementById('saved-items-list');
+  if (!container) return;
+
+  if (savedItems.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">Noch keine Positionen gespeichert.</p>';
+    return;
+  }
+
+  container.innerHTML = savedItems.map((item, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light);">
+      <span style="flex:1;font-size:13px;"><strong>${escapeHtml(item.description)}</strong> — ${item.quantity} ${escapeHtml(item.unit)} × ${formatCurrency(item.price)}</span>
+      <button type="button" class="btn-icon" onclick="removeSavedItem(${i})" title="Entfernen">✕</button>
+    </div>
+  `).join('');
+}
+
+async function addSavedItem() {
+  // Letzte Position aus dem aktuellen Rechnungsformular speichern
+  const lastItem = currentInvoiceItems.filter(i => i.description.trim()).pop();
+  if (!lastItem) {
+    // Leeres Item hinzufügen
+    const desc = prompt('Beschreibung der Position:');
+    if (!desc) return;
+    const price = parseFloat(prompt('Einzelpreis (€):', '0') || '0');
+    const unit = prompt('Einheit:', 'Stk.') || 'Stk.';
+    savedItems.push({
+      description: desc,
+      quantity: 1,
+      unit: unit,
+      price: price,
+      taxRate: 19,
+    });
+  } else {
+    savedItems.push({ ...lastItem });
+  }
+
+  await window.api.saveSavedItems(savedItems);
+  renderSavedItemsList();
+  showToast('Position gespeichert', 'success');
+}
+
+async function removeSavedItem(index) {
+  savedItems.splice(index, 1);
+  await window.api.saveSavedItems(savedItems);
+  renderSavedItemsList();
+}
+
+function showSavedItemsPicker() {
+  const picker = document.getElementById('saved-items-picker');
+  if (savedItems.length === 0) {
+    showToast('Keine gespeicherten Positionen vorhanden. Speichere welche in den Einstellungen.', 'error');
+    return;
+  }
+
+  if (picker.style.display === 'none') {
+    picker.style.display = 'flex';
+    picker.innerHTML = savedItems.map((item, i) => `
+      <div class="saved-item-chip" onclick="insertSavedItem(${i})" title="${escapeHtml(item.description)} — ${formatCurrency(item.price)}">
+        ${escapeHtml(item.description)}
+      </div>
+    `).join('');
+  } else {
+    picker.style.display = 'none';
+  }
+}
+
+function insertSavedItem(index) {
+  const item = savedItems[index];
+  if (!item) return;
+  currentInvoiceItems.push({ ...item });
+  renderInvoiceItems();
+  recalculateInvoice();
+  showToast(`"${item.description}" hinzugefügt`, 'success');
 }
 
 // ==========================

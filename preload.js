@@ -27,6 +27,18 @@ contextBridge.exposeInMainWorld('api', {
   // PDF Import
   importPDFs: () => ipcRenderer.invoke('pdf:import'),
 
+  // Saved Items
+  getSavedItems: () => ipcRenderer.invoke('savedItems:getAll'),
+  saveSavedItems: (items) => ipcRenderer.invoke('savedItems:save', items),
+
+  // Password
+  getPasswordHash: () => ipcRenderer.invoke('password:get'),
+  setPasswordHash: (hash) => ipcRenderer.invoke('password:set', hash),
+
+  // Dark Mode
+  getDarkMode: () => ipcRenderer.invoke('darkMode:get'),
+  setDarkMode: (enabled) => ipcRenderer.invoke('darkMode:set', enabled),
+
   // Font
   loadFont: (fontName) => ipcRenderer.invoke('font:load', fontName),
 });

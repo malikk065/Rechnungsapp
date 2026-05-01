@@ -7,6 +7,17 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Password Overlay -->
+  <div class="password-overlay" id="password-overlay" style="display:none;">
+    <div class="password-box">
+      <h2>🔒 Rechnungsapp</h2>
+      <p>Bitte gib dein Passwort ein</p>
+      <input type="password" id="password-input" placeholder="Passwort" onkeydown="if(event.key==='Enter')checkPassword()">
+      <div class="password-error" id="password-error">Falsches Passwort</div>
+      <button class="btn btn-primary" style="width:100%;" onclick="checkPassword()">Entsperren</button>
+    </div>
+  </div>
+
   <div class="app">
     <!-- Sidebar -->
     <nav class="sidebar">
@@ -31,6 +42,10 @@
           <span>Einstellungen</span>
         </li>
       </ul>
+      <div class="dark-mode-toggle" onclick="toggleDarkMode()">
+        <span class="nav-icon" id="dark-mode-icon">🌙</span>
+        <span id="dark-mode-label">Dunkelmodus</span>
+      </div>
     </nav>
 
     <!-- Main Content -->
@@ -61,6 +76,9 @@
         <div class="section-header">
           <h3>Letzte Rechnungen</h3>
           <button class="btn btn-small" onclick="importPDFInvoices()">📥 PDFs importieren</button>
+        </div>
+        <div class="search-bar">
+          <input type="text" id="search-invoices" placeholder="Rechnungen durchsuchen (Nr., Kunde, Betrag...)" oninput="filterInvoices()">
         </div>
         <table class="data-table" id="invoices-table">
           <thead>
@@ -112,8 +130,12 @@
 
           <div class="section-header">
             <h3>Positionen</h3>
-            <button type="button" class="btn btn-small" onclick="addInvoiceItem()">+ Position</button>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn btn-small" onclick="showSavedItemsPicker()">📋 Gespeicherte</button>
+              <button type="button" class="btn btn-small" onclick="addInvoiceItem()">+ Position</button>
+            </div>
           </div>
+          <div class="saved-items-picker" id="saved-items-picker" style="display:none;"></div>
           <table class="data-table" id="items-table">
             <thead>
               <tr>
@@ -174,6 +196,9 @@
         <div class="tab-header">
           <h2>Kunden</h2>
           <button class="btn btn-primary" onclick="showCustomerForm()">+ Neuer Kunde</button>
+        </div>
+        <div class="search-bar">
+          <input type="text" id="search-customers" placeholder="Kunden durchsuchen (Name, E-Mail, Stadt...)" oninput="filterCustomers()">
         </div>
         <table class="data-table" id="customers-table">
           <thead>
@@ -355,6 +380,26 @@
             </div>
             <div class="form-group" style="flex:0; padding-top:24px;">
               <button type="button" class="btn" onclick="chooseDataPath()">Ändern</button>
+            </div>
+          </div>
+
+          <h3>Gespeicherte Positionen</h3>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;">Häufig genutzte Positionen, die du beim Erstellen einer Rechnung schnell einfügen kannst.</p>
+          <div id="saved-items-list"></div>
+          <button type="button" class="btn btn-small" onclick="addSavedItem()" style="margin-top:8px;">+ Neue Position speichern</button>
+
+          <h3>Passwortschutz</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label id="password-status-label">Passwort: nicht gesetzt</label>
+              <input type="password" id="settings-password" placeholder="Neues Passwort setzen...">
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <div style="display:flex;gap:8px;">
+                <button type="button" class="btn btn-small" onclick="setAppPassword()">Setzen</button>
+                <button type="button" class="btn btn-small btn-danger" onclick="removeAppPassword()">Entfernen</button>
+              </div>
             </div>
           </div>
 
