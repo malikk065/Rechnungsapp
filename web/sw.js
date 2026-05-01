@@ -1,16 +1,16 @@
 // Service Worker für Offline-Support
-const CACHE_NAME = 'rechnungsapp-v1';
+const CACHE_NAME = 'rechnungsapp-v2';
 const URLS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/firebase-config.js',
-  '/store.js',
-  '/pdf-generator.js',
-  '/app.js',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
+  './',
+  './index.html',
+  './styles.css',
+  './firebase-config.js',
+  './store.js',
+  './pdf-generator.js',
+  './app.js',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
 ];
 
 self.addEventListener('install', event => {
