@@ -200,7 +200,19 @@ ipcMain.handle('settings:uploadLogo', async () => {
   const sourcePath = result.filePaths[0];
   const ext = path.extname(sourcePath);
   const destPath = path.join(getDataPath(), `logo${ext}`);
-  fs.copyFileSync(sourcePath, destPath);
+
+  try {
+    // Alte Logo-Dateien löschen
+    ['.png', '.jpg', '.jpeg', '.svg'].forEach(e => {
+      const old = path.join(getDataPath(), `logo${e}`);
+      if (fs.existsSync(old)) try { fs.unlinkSync(old); } catch (_) {}
+    });
+    fs.copyFileSync(sourcePath, destPath);
+    fs.chmodSync(destPath, 0o644);
+  } catch (e) {
+    console.error('Logo-Upload-Fehler:', e.message);
+    return null;
+  }
   return destPath;
 });
 

@@ -711,6 +711,9 @@ async function renderLogoPreview() {
 async function uploadLogo() {
   const result = await window.api.uploadLogo();
   if (result) {
+    // Logo-Pfad in Settings speichern
+    store.settings.logoPath = result;
+    await store.saveSettings(store.settings);
     showToast('Logo hochgeladen', 'success');
     await renderLogoPreview();
   }
