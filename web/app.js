@@ -39,6 +39,22 @@ async function initApp() {
     if (doc.exists) savedItems = doc.data().items || [];
   } catch (e) { console.warn('Saved items load failed:', e); }
 
+  // Echtzeit-Sync starten
+  store.onDataChanged = (type) => {
+    if (type === 'customers') {
+      renderCustomersList();
+      updateInvoiceForm();
+    }
+    if (type === 'invoices') {
+      renderDashboard();
+    }
+    if (type === 'settings') {
+      renderSettingsForm();
+      updateInvoiceForm();
+    }
+  };
+  store.startRealtimeSync();
+
   renderDashboard();
   renderCustomersList();
   renderSettingsForm();
