@@ -177,15 +177,29 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   }
 
   // =====================
-  // RECHNUNG Titel
+  // RECHNUNG / GUTSCHRIFT Titel
   // =====================
-  page.drawText('RECHNUNG', {
+  const isGutschrift = invoice.type === 'gutschrift';
+  const docTitle = isGutschrift ? 'GUTSCHRIFT' : 'RECHNUNG';
+  page.drawText(docTitle, {
     x: marginLeft,
     y: y,
     size: 22,
     font: fontBold,
-    color: black,
+    color: isGutschrift ? rgb(0.69, 0.32, 0.87) : black,
   });
+
+  // Referenz bei Gutschrift
+  if (isGutschrift && invoice.relatedInvoice) {
+    y -= 18;
+    page.drawText(`Zu Rechnung: ${invoice.relatedInvoice}`, {
+      x: marginLeft,
+      y,
+      size: 9,
+      font: fontRegular,
+      color: gray,
+    });
+  }
 
   y -= 40;
 
@@ -362,7 +376,8 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
 
   // Brutto
   const bruttoLabel = isKlein ? 'Gesamtbetrag:' : 'Bruttobetrag:';
-  drawSumLine(page, bruttoLabel, formatCurrencyPDF(totals.brutto), sumX, valX, y, fontBold, fontBold, 12, black, black);
+  const bruttoPrefix = isGutschrift ? '-' : '';
+  drawSumLine(page, bruttoLabel, bruttoPrefix + formatCurrencyPDF(totals.brutto), sumX, valX, y, fontBold, fontBold, 12, black, black);
   y -= 30;
 
   // =====================
@@ -411,7 +426,16 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   // =====================
   y -= 10;
 
-  if (invoice.paymentMethod === 'bar') {
+  if (isGutschrift) {
+    page.drawText(`Der Betrag von ${formatCurrencyPDF(totals.brutto)} wird gutgeschrieben.`, {
+      x: marginLeft,
+      y,
+      size: 9,
+      font: fontRegular,
+      color: black,
+    });
+    y -= 20;
+  } else if (invoice.paymentMethod === 'bar') {
     // Bar bezahlt - kein Überweisungshinweis
     page.drawText('Zahlungsart: Bar bezahlt', {
       x: marginLeft,

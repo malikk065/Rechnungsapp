@@ -306,6 +306,51 @@ ipcMain.handle('dataPath:choose', async () => {
   return newPath;
 });
 
+// Saved Items (Gespeicherte Positionen)
+ipcMain.handle('savedItems:getAll', () => {
+  const filePath = path.join(getDataPath(), 'saved-items.json');
+  return readJSON(filePath) || [];
+});
+
+ipcMain.handle('savedItems:save', (_event, items) => {
+  const filePath = path.join(getDataPath(), 'saved-items.json');
+  writeJSON(filePath, items);
+  return true;
+});
+
+// Password
+ipcMain.handle('password:get', () => {
+  const filePath = path.join(getDataPath(), 'auth.json');
+  const data = readJSON(filePath);
+  return data ? data.hash : null;
+});
+
+ipcMain.handle('password:set', (_event, hash) => {
+  const filePath = path.join(getDataPath(), 'auth.json');
+  if (hash) {
+    writeJSON(filePath, { hash });
+  } else {
+    // Passwort entfernen
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+  return true;
+});
+
+// Dark Mode Preference
+ipcMain.handle('darkMode:get', () => {
+  const filePath = path.join(getDataPath(), 'preferences.json');
+  const data = readJSON(filePath);
+  return data ? data.darkMode : false;
+});
+
+ipcMain.handle('darkMode:set', (_event, enabled) => {
+  const filePath = path.join(getDataPath(), 'preferences.json');
+  const data = readJSON(filePath) || {};
+  data.darkMode = enabled;
+  writeJSON(filePath, data);
+  return true;
+});
+
 // PDF Import - Text aus PDFs extrahieren
 ipcMain.handle('pdf:import', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
