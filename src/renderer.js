@@ -33,6 +33,22 @@ async function initApp() {
   // Lokale Daten nach Firebase synchronisieren
   await syncToFirebase();
 
+  // Echtzeit-Sync starten
+  store.onDataChanged = (type) => {
+    if (type === 'customers') {
+      renderCustomersList();
+      updateInvoiceForm();
+    }
+    if (type === 'invoices') {
+      renderDashboard();
+    }
+    if (type === 'settings') {
+      renderSettingsForm();
+      updateInvoiceForm();
+    }
+  };
+  store.startRealtimeSync();
+
   setupNavigation();
   setupForms();
   renderDashboard();

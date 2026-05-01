@@ -7,6 +7,43 @@ class Store {
     this.invoices = [];
     this.useFirebase = typeof firebase !== 'undefined' && typeof db !== 'undefined';
     this.isElectron = typeof window.api !== 'undefined';
+    this._listeners = [];
+    this.onDataChanged = null; // Callback für UI-Updates bei Echtzeit-Änderungen
+  }
+
+  // --- Echtzeit-Listener starten ---
+  startRealtimeSync() {
+    if (!this.useFirebase) return;
+
+    // Kunden-Listener
+    const unsubCustomers = db.collection('customers').onSnapshot(snapshot => {
+      this.customers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (this.onDataChanged) this.onDataChanged('customers');
+    }, err => console.warn('Kunden-Listener Fehler:', err));
+    this._listeners.push(unsubCustomers);
+
+    // Rechnungen-Listener
+    const unsubInvoices = db.collection('invoices').onSnapshot(snapshot => {
+      this.invoices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (this.onDataChanged) this.onDataChanged('invoices');
+    }, err => console.warn('Rechnungen-Listener Fehler:', err));
+    this._listeners.push(unsubInvoices);
+
+    // Settings-Listener
+    const unsubSettings = db.collection('app').doc('settings').onSnapshot(doc => {
+      if (doc.exists) {
+        this.settings = doc.data();
+        if (this.onDataChanged) this.onDataChanged('settings');
+      }
+    }, err => console.warn('Settings-Listener Fehler:', err));
+    this._listeners.push(unsubSettings);
+
+    console.log('Echtzeit-Sync gestartet');
+  }
+
+  stopRealtimeSync() {
+    this._listeners.forEach(unsub => unsub());
+    this._listeners = [];
   }
 
   // --- Settings ---
