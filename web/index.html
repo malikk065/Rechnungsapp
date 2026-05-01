@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1d1d1f">
+  <title>Rechnungsapp</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Password Overlay -->
+  <div class="password-overlay" id="password-overlay" style="display:none;">
+    <div class="password-box">
+      <h2>&#128274; Rechnungsapp</h2>
+      <p>Bitte gib dein Passwort ein</p>
+      <input type="password" id="password-input" placeholder="Passwort" onkeydown="if(event.key==='Enter')checkPassword()">
+      <div class="password-error" id="password-error">Falsches Passwort</div>
+      <button class="btn btn-primary" style="width:100%;" onclick="checkPassword()">Entsperren</button>
+    </div>
+  </div>
+
+  <div class="app">
+    <!-- Mobile Nav (Bottom Tabs) -->
+    <nav class="mobile-nav" id="mobile-nav">
+      <div class="mobile-nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
+        <span>&#9776;</span>
+        <span>Start</span>
+      </div>
+      <div class="mobile-nav-item" data-tab="new-invoice" onclick="switchTab('new-invoice')">
+        <span>&#43;</span>
+        <span>Rechnung</span>
+      </div>
+      <div class="mobile-nav-item" data-tab="customers" onclick="switchTab('customers')">
+        <span>&#128101;</span>
+        <span>Kunden</span>
+      </div>
+      <div class="mobile-nav-item" data-tab="settings" onclick="switchTab('settings')">
+        <span>&#9881;</span>
+        <span>Mehr</span>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="content mobile-content">
+      <!-- Dashboard -->
+      <section id="tab-dashboard" class="tab-content active">
+        <div class="tab-header">
+          <h2>Dashboard</h2>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-label">Gesamt</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-open">0</div>
+            <div class="stat-label">Offen</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-paid">0</div>
+            <div class="stat-label">Bezahlt</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-revenue">0,00 &euro;</div>
+            <div class="stat-label">Umsatz</div>
+          </div>
+        </div>
+        <div class="search-bar">
+          <input type="text" id="search-invoices" placeholder="Rechnungen suchen..." oninput="filterInvoices()">
+        </div>
+        <div id="invoices-list" class="card-list"></div>
+        <div class="empty-state" id="dashboard-empty">
+          <p>Noch keine Rechnungen.</p>
+          <button class="btn btn-primary" onclick="switchTab('new-invoice')">Erste Rechnung</button>
+        </div>
+      </section>
+
+      <!-- Neue Rechnung -->
+      <section id="tab-new-invoice" class="tab-content">
+        <div class="tab-header">
+          <h2 id="invoice-form-title">Neue Rechnung</h2>
+        </div>
+        <div class="form" id="invoice-form-wrapper">
+          <input type="hidden" id="invoice-edit-id">
+          <div class="form-group">
+            <label>Kunde</label>
+            <select id="invoice-customer">
+              <option value="">-- Kunde --</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Datum</label>
+              <input type="date" id="invoice-date">
+            </div>
+            <div class="form-group">
+              <label>Zahlungsziel (Tage)</label>
+              <input type="number" id="invoice-due-days" value="14">
+            </div>
+          </div>
+
+          <div class="form-group" id="tax-mode-display">
+            <label>Steuer-Modus: <strong id="current-tax-mode"></strong></label>
+          </div>
+
+          <div class="section-header">
+            <h3>Positionen</h3>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn btn-small" onclick="showSavedItemsPicker()">&#128203; Gespeicherte</button>
+              <button type="button" class="btn btn-small" onclick="addInvoiceItem()">+ Neu</button>
+            </div>
+          </div>
+          <div class="saved-items-picker" id="saved-items-picker" style="display:none;"></div>
+
+          <!-- Mobile: Positionen als Karten statt Tabelle -->
+          <div id="items-cards" class="card-list"></div>
+
+          <div class="invoice-totals">
+            <div class="total-row">
+              <span>Netto:</span>
+              <span id="total-netto">0,00 &euro;</span>
+            </div>
+            <div class="total-row tax-row" id="mwst-row">
+              <span>MwSt:</span>
+              <span id="total-mwst">0,00 &euro;</span>
+            </div>
+            <div class="total-row total-brutto">
+              <span>Brutto:</span>
+              <span id="total-brutto">0,00 &euro;</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Zahlungsart</label>
+            <select id="invoice-payment-method">
+              <option value="ueberweisung">Überweisung</option>
+              <option value="bar">Bar bezahlt</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Bemerkungen</label>
+            <textarea id="invoice-notes" rows="2" placeholder="Optionale Bemerkungen..."></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" onclick="saveInvoice()">Speichern</button>
+            <button type="button" class="btn" onclick="saveInvoiceAndPDF()">Speichern & PDF</button>
+            <button type="button" class="btn btn-ghost" onclick="resetInvoiceForm()">Abbrechen</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Kunden -->
+      <section id="tab-customers" class="tab-content">
+        <div class="tab-header">
+          <h2>Kunden</h2>
+          <button class="btn btn-primary btn-small" onclick="showCustomerForm()">+ Neu</button>
+        </div>
+        <div class="search-bar">
+          <input type="text" id="search-customers" placeholder="Kunden suchen..." oninput="filterCustomers()">
+        </div>
+        <div id="customers-list" class="card-list"></div>
+        <div class="empty-state" id="customers-empty">
+          <p>Noch keine Kunden.</p>
+          <button class="btn btn-primary" onclick="showCustomerForm()">Ersten Kunden anlegen</button>
+        </div>
+
+        <!-- Kunden-Modal -->
+        <div class="modal" id="customer-modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3 id="customer-modal-title">Neuer Kunde</h3>
+              <button class="btn-close" onclick="closeCustomerModal()">&times;</button>
+            </div>
+            <form id="customer-form">
+              <input type="hidden" id="customer-edit-id">
+              <div class="form-group">
+                <label>Firma / Name *</label>
+                <input type="text" id="customer-name" required>
+              </div>
+              <div class="form-group">
+                <label>Straße + Nr.</label>
+                <input type="text" id="customer-street">
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:0.4">
+                  <label>PLZ</label>
+                  <input type="text" id="customer-zip">
+                </div>
+                <div class="form-group">
+                  <label>Stadt</label>
+                  <input type="text" id="customer-city">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>E-Mail</label>
+                <input type="email" id="customer-email">
+              </div>
+              <div class="form-group">
+                <label>Telefon</label>
+                <input type="text" id="customer-phone">
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Speichern</button>
+                <button type="button" class="btn btn-ghost" onclick="closeCustomerModal()">Abbrechen</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- Einstellungen -->
+      <section id="tab-settings" class="tab-content">
+        <div class="tab-header">
+          <h2>Einstellungen</h2>
+        </div>
+        <form id="settings-form" class="form">
+          <h3>Unternehmensdaten</h3>
+          <div class="form-group">
+            <label>Firmenname *</label>
+            <input type="text" id="settings-company-name" required>
+          </div>
+          <div class="form-group">
+            <label>Straße + Nr.</label>
+            <input type="text" id="settings-address">
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:0.4">
+              <label>PLZ</label>
+              <input type="text" id="settings-zip">
+            </div>
+            <div class="form-group">
+              <label>Stadt</label>
+              <input type="text" id="settings-city">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Telefon</label>
+              <input type="text" id="settings-phone">
+            </div>
+            <div class="form-group">
+              <label>E-Mail</label>
+              <input type="email" id="settings-email">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Website</label>
+            <input type="text" id="settings-website">
+          </div>
+
+          <h3>Steuerdaten</h3>
+          <div class="form-group">
+            <label>Steuernummer</label>
+            <input type="text" id="settings-tax-number">
+          </div>
+          <div class="form-group">
+            <label>USt-IdNr.</label>
+            <input type="text" id="settings-vat-id">
+          </div>
+          <div class="form-group">
+            <label>Steuer-Modus</label>
+            <select id="settings-tax-mode">
+              <option value="kleinunternehmer">Kleinunternehmer (§19 UStG)</option>
+              <option value="regelbesteuerung">Regelbesteuerung</option>
+            </select>
+          </div>
+
+          <h3>Bankverbindung</h3>
+          <div class="form-group">
+            <label>Bank</label>
+            <input type="text" id="settings-bank-name">
+          </div>
+          <div class="form-group">
+            <label>IBAN</label>
+            <input type="text" id="settings-iban">
+          </div>
+          <div class="form-group">
+            <label>BIC</label>
+            <input type="text" id="settings-bic">
+          </div>
+
+          <h3>Rechnungsnummern</h3>
+          <div class="form-row">
+            <div class="form-group" style="flex:0.4">
+              <label>Präfix</label>
+              <input type="text" id="settings-invoice-prefix" value="RE">
+            </div>
+            <div class="form-group" style="flex:0.4">
+              <label>Nächste Nr.</label>
+              <input type="number" id="settings-next-number" min="1" value="1">
+            </div>
+            <div class="form-group">
+              <label>Vorschau</label>
+              <input type="text" id="settings-number-preview" readonly class="input-readonly">
+            </div>
+          </div>
+
+          <h3>Darstellung</h3>
+          <div class="form-group">
+            <label>Design</label>
+            <button type="button" class="btn" onclick="toggleDarkMode()" id="dark-mode-btn">&#127769; Dunkelmodus</button>
+          </div>
+
+          <h3>Passwortschutz</h3>
+          <div class="form-group">
+            <label id="password-status-label">Passwort: nicht gesetzt</label>
+            <input type="password" id="settings-password" placeholder="Neues Passwort...">
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <button type="button" class="btn btn-small" onclick="setAppPassword()">Setzen</button>
+            <button type="button" class="btn btn-small btn-danger" onclick="removeAppPassword()">Entfernen</button>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Einstellungen speichern</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="store.js"></script>
+  <script src="pdf-generator.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
