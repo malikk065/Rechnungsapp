@@ -5,8 +5,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   const { PDFDocument, rgb, StandardFonts } = PDFLib;
 
   const doc = await PDFDocument.create();
-  const page = doc.addPage([595.28, 841.89]); // A4
-  const { width, height } = page.getSize();
+  const A4 = [595.28, 841.89];
 
   // Fonts
   const fontRegular = await doc.embedFont(StandardFonts.Helvetica);
@@ -21,9 +20,36 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
 
   const marginLeft = 50;
   const marginRight = 50;
+  const footerReserve = 60; // Platz für Fußzeile am unteren Seitenrand
+
+  // Pagination-Context
+  const ctx = {
+    doc,
+    page: doc.addPage(A4),
+    pageNum: 1,
+    pages: [],
+  };
+  ctx.pages.push(ctx.page);
+  const { width, height } = ctx.page.getSize();
   const contentWidth = width - marginLeft - marginRight;
 
   let y = height - 50;
+
+  function newPage() {
+    ctx.page = doc.addPage(A4);
+    ctx.pageNum++;
+    ctx.pages.push(ctx.page);
+    y = height - 50;
+  }
+
+  // Wenn weniger als `needed` Pixel bis zum Footer übrig sind → neue Seite
+  function ensureSpace(needed) {
+    if (y - needed < footerReserve) {
+      newPage();
+      return true;
+    }
+    return false;
+  }
 
   // =====================
   // HEADER - Logo + Firmendaten
@@ -48,7 +74,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
         const scale = Math.min(maxW / logoDims.width, maxH / logoDims.height, 1);
         const w = logoDims.width * scale;
         const h = logoDims.height * scale;
-        page.drawImage(logoImage, {
+        ctx.page.drawImage(logoImage, {
           x: marginLeft,
           y: headerTop - h,
           width: w,
@@ -75,7 +101,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   let companyY = headerTop;
   for (const line of companyLines) {
     const tw = line.font.widthOfTextAtSize(line.text, line.size);
-    page.drawText(line.text, {
+    ctx.page.drawText(line.text, {
       x: companyX - tw,
       y: companyY - line.size,
       size: line.size,
@@ -96,7 +122,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
     `${settings.company.zip} ${settings.company.city}`.trim()
   ].filter(Boolean).join(' · ');
 
-  page.drawText(senderLine, {
+  ctx.page.drawText(senderLine, {
     x: marginLeft,
     y: y,
     size: 7,
@@ -106,7 +132,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
 
   // Underline
   y -= 3;
-  page.drawLine({
+  ctx.page.drawLine({
     start: { x: marginLeft, y },
     end: { x: marginLeft + 250, y },
     thickness: 0.5,
@@ -126,7 +152,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
     ].filter(Boolean);
 
     for (const line of addrLines) {
-      page.drawText(line, {
+      ctx.page.drawText(line, {
         x: marginLeft,
         y,
         size: 11,
@@ -159,14 +185,14 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   }
 
   for (const [label, value] of details) {
-    page.drawText(label, {
+    ctx.page.drawText(label, {
       x: detailsX,
       y: detailY,
       size: 8,
       font: fontRegular,
       color: gray,
     });
-    page.drawText(value || '', {
+    ctx.page.drawText(value || '', {
       x: detailsX + 95,
       y: detailY,
       size: 8,
@@ -181,7 +207,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   // =====================
   const isGutschrift = invoice.type === 'gutschrift';
   const docTitle = isGutschrift ? 'GUTSCHRIFT' : 'RECHNUNG';
-  page.drawText(docTitle, {
+  ctx.page.drawText(docTitle, {
     x: marginLeft,
     y: y,
     size: 22,
@@ -192,7 +218,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   // Referenz bei Gutschrift
   if (isGutschrift && invoice.relatedInvoice) {
     y -= 18;
-    page.drawText(`Zu Rechnung: ${invoice.relatedInvoice}`, {
+    ctx.page.drawText(`Zu Rechnung: ${invoice.relatedInvoice}`, {
       x: marginLeft,
       y,
       size: 9,
@@ -206,7 +232,9 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   // =====================
   // Positionen-Tabelle
   // =====================
-  const isKlein = invoice.taxMode === 'kleinunternehmer' || settings.taxMode === 'kleinunternehmer';
+  // Verwende den vom Store berechneten taxMode (Invoice-Override > Settings-Mode)
+  const taxMode = totals.taxMode || invoice.taxMode || settings.taxMode || 'kleinunternehmer';
+  const isKlein = taxMode === 'kleinunternehmer';
 
   // Spalten-Definition
   const cols = isKlein
@@ -228,51 +256,56 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
         { label: 'Gesamt', width: 75, align: 'right' },
       ];
 
-  // Tabellen-Header
+  // Helper: Tabellen-Header zeichnen (wird auch nach Seitenumbruch wiederverwendet)
   const tableHeaderH = 22;
-  page.drawRectangle({
-    x: marginLeft,
-    y: y - tableHeaderH + 6,
-    width: contentWidth,
-    height: tableHeaderH,
-    color: rgb(0.95, 0.95, 0.96),
-  });
-
-  let colX = marginLeft + 4;
-  for (const col of cols) {
-    const textX = col.align === 'right'
-      ? colX + col.width - fontBold.widthOfTextAtSize(col.label, 8) - 4
-      : colX;
-    page.drawText(col.label, {
-      x: textX,
-      y: y - 10,
-      size: 8,
-      font: fontBold,
-      color: gray,
+  function drawTableHeader() {
+    ctx.page.drawRectangle({
+      x: marginLeft,
+      y: y - tableHeaderH + 6,
+      width: contentWidth,
+      height: tableHeaderH,
+      color: rgb(0.95, 0.95, 0.96),
     });
-    colX += col.width;
+    let cx = marginLeft + 4;
+    for (const col of cols) {
+      const textX = col.align === 'right'
+        ? cx + col.width - fontBold.widthOfTextAtSize(col.label, 8) - 4
+        : cx;
+      ctx.page.drawText(col.label, {
+        x: textX, y: y - 10, size: 8, font: fontBold, color: gray,
+      });
+      cx += col.width;
+    }
+    y -= tableHeaderH + 4;
   }
 
-  y -= tableHeaderH + 4;
+  drawTableHeader();
 
-  // Tabellen-Zeilen
+  // Tabellen-Zeilen mit Pagination
   const items = invoice.items || [];
+  const rowH = 20;
   for (let i = 0; i < items.length; i++) {
+    // Vor jeder Zeile prüfen: brauchen wir neue Seite?
+    if (y - rowH < footerReserve) {
+      newPage();
+      drawTableHeader();
+    }
+
     const item = items[i];
-    const itemTotal = item.quantity * item.price;
+    const itemTotal = (Number(item.quantity) || 0) * (Number(item.price) || 0);
 
     // Alternating row background
     if (i % 2 === 1) {
-      page.drawRectangle({
+      ctx.page.drawRectangle({
         x: marginLeft,
         y: y - 12,
         width: contentWidth,
-        height: 20,
+        height: rowH,
         color: rgb(0.98, 0.98, 0.99),
       });
     }
 
-    colX = marginLeft + 4;
+    let colX = marginLeft + 4;
     const rowData = isKlein
       ? [
           String(i + 1),
@@ -307,7 +340,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
       const tw = fontRegular.widthOfTextAtSize(text, 9);
       const textX = col.align === 'right' ? colX + col.width - tw - 4 : colX;
 
-      page.drawText(text, {
+      ctx.page.drawText(text, {
         x: textX,
         y: y - 4,
         size: 9,
@@ -317,20 +350,12 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
       colX += col.width;
     }
 
-    y -= 20;
-
-    // Page break check
-    if (y < 180) {
-      // Add new page
-      const newPage = doc.addPage([595.28, 841.89]);
-      // TODO: For simplicity, we continue on same page
-      // In production, handle page breaks properly
-    }
+    y -= rowH;
   }
 
   // Tabellen-Linie unten
   y -= 4;
-  page.drawLine({
+  ctx.page.drawLine({
     start: { x: marginLeft, y },
     end: { x: width - marginRight, y },
     thickness: 0.5,
@@ -340,33 +365,34 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   y -= 24;
 
   // =====================
-  // Summen
+  // Summen (geschätzter Platzbedarf: Netto + MwSt-Gruppen + Brutto ≈ 60-100 px)
   // =====================
+  const numTaxGroups = (totals.taxGroups && !isKlein) ? Object.keys(totals.taxGroups).length : 0;
+  const summaryNeeded = 60 + numTaxGroups * 16;
+  ensureSpace(summaryNeeded);
+
   const sumX = width - marginRight - 180;
   const valX = width - marginRight;
 
   // Netto
-  drawSumLine(page, 'Nettobetrag:', formatCurrencyPDF(totals.netto), sumX, valX, y, fontRegular, fontRegular, 10, gray, black);
+  drawSumLine(ctx.page, 'Nettobetrag:', formatCurrencyPDF(totals.netto), sumX, valX, y, fontRegular, fontRegular, 10, gray, black);
   y -= 16;
 
   if (!isKlein) {
-    // MwSt aufschlüsseln
-    const taxGroups = {};
-    for (const item of items) {
-      const rate = item.taxRate != null ? item.taxRate : 19;
-      if (!taxGroups[rate]) taxGroups[rate] = 0;
-      taxGroups[rate] += item.quantity * item.price * (rate / 100);
-    }
-
-    for (const [rate, amount] of Object.entries(taxGroups)) {
-      drawSumLine(page, `MwSt ${rate}%:`, formatCurrencyPDF(Math.round(amount * 100) / 100), sumX, valX, y, fontRegular, fontRegular, 10, gray, black);
+    // MwSt aufschlüsseln — bevorzugt aus totals.taxGroups (consistent mit Store)
+    const taxGroups = totals.taxGroups || {};
+    const sortedRates = Object.keys(taxGroups).sort((a, b) => Number(a) - Number(b));
+    for (const rate of sortedRates) {
+      const group = taxGroups[rate];
+      const amount = typeof group === 'object' ? group.mwst : group;
+      drawSumLine(ctx.page, `MwSt ${rate}%:`, formatCurrencyPDF(amount), sumX, valX, y, fontRegular, fontRegular, 10, gray, black);
       y -= 16;
     }
   }
 
-  // Brutto-Linie ÜBER dem Text (y zuerst nach unten, dann Linie, dann Text)
+  // Brutto-Linie ÜBER dem Text
   y -= 6;
-  page.drawLine({
+  ctx.page.drawLine({
     start: { x: sumX, y },
     end: { x: valX, y },
     thickness: 1.5,
@@ -377,19 +403,16 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   // Brutto
   const bruttoLabel = isKlein ? 'Gesamtbetrag:' : 'Bruttobetrag:';
   const bruttoPrefix = isGutschrift ? '-' : '';
-  drawSumLine(page, bruttoLabel, bruttoPrefix + formatCurrencyPDF(totals.brutto), sumX, valX, y, fontBold, fontBold, 12, black, black);
+  drawSumLine(ctx.page, bruttoLabel, bruttoPrefix + formatCurrencyPDF(totals.brutto), sumX, valX, y, fontBold, fontBold, 12, black, black);
   y -= 30;
 
   // =====================
   // Kleinunternehmer-Hinweis
   // =====================
   if (isKlein) {
-    page.drawText('Gemäß §19 UStG wird keine Umsatzsteuer berechnet.', {
-      x: marginLeft,
-      y,
-      size: 8,
-      font: fontRegular,
-      color: gray,
+    ensureSpace(20);
+    ctx.page.drawText('Gemäß §19 UStG wird keine Umsatzsteuer berechnet.', {
+      x: marginLeft, y, size: 8, font: fontRegular, color: gray,
     });
     y -= 20;
   }
@@ -398,24 +421,16 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   // Bemerkungen
   // =====================
   if (invoice.notes) {
+    const noteLines = wrapText(invoice.notes, fontRegular, 9, contentWidth);
+    ensureSpace(24 + noteLines.length * 13);
     y -= 10;
-    page.drawText('Bemerkungen:', {
-      x: marginLeft,
-      y,
-      size: 9,
-      font: fontBold,
-      color: black,
+    ctx.page.drawText('Bemerkungen:', {
+      x: marginLeft, y, size: 9, font: fontBold, color: black,
     });
     y -= 14;
-
-    const noteLines = wrapText(invoice.notes, fontRegular, 9, contentWidth);
     for (const line of noteLines) {
-      page.drawText(line, {
-        x: marginLeft,
-        y,
-        size: 9,
-        font: fontRegular,
-        color: gray,
+      ctx.page.drawText(line, {
+        x: marginLeft, y, size: 9, font: fontRegular, color: gray,
       });
       y -= 13;
     }
@@ -427,61 +442,45 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   y -= 10;
 
   if (isGutschrift) {
-    page.drawText(`Der Betrag von ${formatCurrencyPDF(totals.brutto)} wird gutgeschrieben.`, {
-      x: marginLeft,
-      y,
-      size: 9,
-      font: fontRegular,
-      color: black,
+    ensureSpace(30);
+    ctx.page.drawText(`Der Betrag von ${formatCurrencyPDF(totals.brutto)} wird gutgeschrieben.`, {
+      x: marginLeft, y, size: 9, font: fontRegular, color: black,
     });
     y -= 20;
   } else if (invoice.paymentMethod === 'bar') {
-    // Bar bezahlt - kein Überweisungshinweis
-    page.drawText('Zahlungsart: Bar bezahlt', {
-      x: marginLeft,
-      y,
-      size: 10,
-      font: fontBold,
-      color: black,
+    ensureSpace(60);
+    ctx.page.drawText('Zahlungsart: Bar bezahlt', {
+      x: marginLeft, y, size: 10, font: fontBold, color: black,
     });
     y -= 16;
-    page.drawText(`Der Betrag von ${formatCurrencyPDF(totals.brutto)} wurde bar entgegengenommen.`, {
-      x: marginLeft,
-      y,
-      size: 9,
-      font: fontRegular,
-      color: black,
+    ctx.page.drawText(`Der Betrag von ${formatCurrencyPDF(totals.brutto)} wurde bar entgegengenommen.`, {
+      x: marginLeft, y, size: 9, font: fontRegular, color: black,
     });
     y -= 14;
-    page.drawText(`Datum: ${formatDateForPDF(invoice.date)}`, {
-      x: marginLeft,
-      y,
-      size: 9,
-      font: fontRegular,
-      color: black,
+    ctx.page.drawText(`Datum: ${formatDateForPDF(invoice.date)}`, {
+      x: marginLeft, y, size: 9, font: fontRegular, color: black,
     });
     y -= 20;
   } else {
-    // Überweisung - Standard-Zahlungshinweis
+    // Überweisung: Bankblock + ggf. QR braucht zusammenhängend ca. 110 px
+    const bankInfo = [
+      settings.company.accountHolder ? `Kontoinhaber: ${settings.company.accountHolder}` : '',
+      settings.company.bankName ? `Bank: ${settings.company.bankName}` : '',
+      settings.company.iban ? `IBAN: ${settings.company.iban}` : '',
+      settings.company.bic ? `BIC: ${settings.company.bic}` : '',
+    ].filter(Boolean);
+
+    const bankBlockHeight = 30 + bankInfo.length * 14 + (qrData ? 90 : 0);
+    ensureSpace(bankBlockHeight);
+
     const paymentText = `Bitte überweisen Sie den Betrag von ${formatCurrencyPDF(totals.brutto)} bis zum ${formatDateForPDF(addDays(invoice.date, invoice.dueDays || 14))} auf folgendes Konto:`;
-    page.drawText(paymentText, {
-      x: marginLeft,
-      y,
-      size: 9,
-      font: fontRegular,
-      color: black,
+    ctx.page.drawText(paymentText, {
+      x: marginLeft, y, size: 9, font: fontRegular, color: black,
     });
     y -= 20;
 
-    // Bankdaten + QR-Code
-    if (settings.company.bankName || settings.company.iban) {
-      const bankInfo = [
-        settings.company.bankName ? `Bank: ${settings.company.bankName}` : '',
-        settings.company.iban ? `IBAN: ${settings.company.iban}` : '',
-        settings.company.bic ? `BIC: ${settings.company.bic}` : '',
-      ].filter(Boolean);
-
-      // QR-Code rechts neben den Bankdaten einbetten
+    if (bankInfo.length > 0) {
+      // QR-Code rechts neben den Bankdaten
       let qrSize = 0;
       if (qrData) {
         try {
@@ -489,16 +488,13 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
           qrSize = 80;
           const qrX = width - marginRight - qrSize;
           const qrY = y - qrSize + 14;
-          page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
-          // Label unter dem QR-Code
+          ctx.page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
           const qrLabel = 'Scan to Pay';
           const qrLabelW = fontRegular.widthOfTextAtSize(qrLabel, 7);
-          page.drawText(qrLabel, {
+          ctx.page.drawText(qrLabel, {
             x: qrX + (qrSize - qrLabelW) / 2,
             y: qrY - 10,
-            size: 7,
-            font: fontRegular,
-            color: gray,
+            size: 7, font: fontRegular, color: gray,
           });
         } catch (e) {
           console.warn('QR-Code-Embed-Fehler:', e);
@@ -507,17 +503,12 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
       }
 
       for (const line of bankInfo) {
-        page.drawText(line, {
-          x: marginLeft,
-          y,
-          size: 9,
-          font: fontRegular,
-          color: black,
+        ctx.page.drawText(line, {
+          x: marginLeft, y, size: 9, font: fontRegular, color: black,
         });
         y -= 14;
       }
 
-      // Extra Platz wenn QR-Code höher als Bankdaten
       if (qrSize > 0 && bankInfo.length * 14 < qrSize) {
         y -= (qrSize - bankInfo.length * 14) + 10;
       }
@@ -528,6 +519,7 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
   // Digitale Unterschrift
   // =====================
   if (signatureData && signatureData.data) {
+    ensureSpace(80);
     try {
       let sigImage;
       if (signatureData.mimeType.includes('png')) {
@@ -541,18 +533,18 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
         const maxW = 150;
         const scale = Math.min(maxW / dims.width, maxH / dims.height, 1);
         y -= 10;
-        page.drawImage(sigImage, { x: marginLeft, y: y - dims.height * scale, width: dims.width * scale, height: dims.height * scale });
+        ctx.page.drawImage(sigImage, { x: marginLeft, y: y - dims.height * scale, width: dims.width * scale, height: dims.height * scale });
         y -= dims.height * scale + 4;
-        page.drawLine({ start: { x: marginLeft, y }, end: { x: marginLeft + 150, y }, thickness: 0.5, color: lightGray });
+        ctx.page.drawLine({ start: { x: marginLeft, y }, end: { x: marginLeft + 150, y }, thickness: 0.5, color: lightGray });
         y -= 10;
-        page.drawText(settings.company.name || '', { x: marginLeft, y, size: 7, font: fontRegular, color: gray });
+        ctx.page.drawText(settings.company.name || '', { x: marginLeft, y, size: 7, font: fontRegular, color: gray });
         y -= 16;
       }
     } catch (e) { console.warn('Unterschrift-Embed-Fehler:', e); }
   }
 
   // =====================
-  // Fußzeile
+  // Fußzeile + Seitenzahl AUF JEDER SEITE
   // =====================
   const footerY = 30;
   const footerParts = [
@@ -560,24 +552,33 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
     settings.company.taxNumber ? `St.Nr.: ${settings.company.taxNumber}` : '',
     settings.company.vatId ? `USt-IdNr.: ${settings.company.vatId}` : '',
   ].filter(Boolean);
-
   const footerText = footerParts.join('  ·  ');
   const footerWidth = fontRegular.widthOfTextAtSize(footerText, 7);
+  const totalPages = ctx.pages.length;
 
-  page.drawLine({
-    start: { x: marginLeft, y: footerY + 12 },
-    end: { x: width - marginRight, y: footerY + 12 },
-    thickness: 0.5,
-    color: lightGray,
-  });
-
-  page.drawText(footerText, {
-    x: (width - footerWidth) / 2,
-    y: footerY,
-    size: 7,
-    font: fontRegular,
-    color: gray,
-  });
+  for (let i = 0; i < ctx.pages.length; i++) {
+    const p = ctx.pages[i];
+    p.drawLine({
+      start: { x: marginLeft, y: footerY + 12 },
+      end: { x: width - marginRight, y: footerY + 12 },
+      thickness: 0.5,
+      color: lightGray,
+    });
+    p.drawText(footerText, {
+      x: (width - footerWidth) / 2,
+      y: footerY,
+      size: 7, font: fontRegular, color: gray,
+    });
+    if (totalPages > 1) {
+      const pageLabel = `Seite ${i + 1} von ${totalPages}`;
+      const labelW = fontRegular.widthOfTextAtSize(pageLabel, 7);
+      p.drawText(pageLabel, {
+        x: width - marginRight - labelW,
+        y: footerY + 18,
+        size: 7, font: fontRegular, color: gray,
+      });
+    }
+  }
 
   return await doc.save();
 }

@@ -889,24 +889,46 @@ class Store {
   }
 
   calculateInvoiceTotal(invoice) {
-    const settings = this.settings;
+    const settings = this.settings || {};
+    // Invoice-spezifischer taxMode hat Vorrang vor globalem settings.taxMode
+    const taxMode = invoice.taxMode || settings.taxMode || 'kleinunternehmer';
+    const isRegel = taxMode === 'regelbesteuerung';
+
     let netto = 0;
     let mwst = 0;
+    const taxGroups = {}; // {rate: {netto, mwst}}
 
     for (const item of (invoice.items || [])) {
-      const itemNetto = item.quantity * item.price;
+      const qty = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      const itemNetto = qty * price;
       netto += itemNetto;
 
-      if (settings && settings.taxMode === 'regelbesteuerung') {
-        const rate = item.taxRate != null ? item.taxRate : 19;
-        mwst += itemNetto * (rate / 100);
+      if (isRegel) {
+        const rate = Number(item.taxRate != null ? item.taxRate : 19);
+        const itemMwst = itemNetto * (rate / 100);
+        mwst += itemMwst;
+        if (!taxGroups[rate]) taxGroups[rate] = { netto: 0, mwst: 0 };
+        taxGroups[rate].netto += itemNetto;
+        taxGroups[rate].mwst += itemMwst;
       }
+    }
+
+    // Runden
+    const roundedGroups = {};
+    for (const [rate, vals] of Object.entries(taxGroups)) {
+      roundedGroups[rate] = {
+        netto: Math.round(vals.netto * 100) / 100,
+        mwst: Math.round(vals.mwst * 100) / 100,
+      };
     }
 
     return {
       netto: Math.round(netto * 100) / 100,
       mwst: Math.round(mwst * 100) / 100,
       brutto: Math.round((netto + mwst) * 100) / 100,
+      taxGroups: roundedGroups,
+      taxMode,
     };
   }
 }
