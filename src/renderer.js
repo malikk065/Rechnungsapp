@@ -1009,7 +1009,8 @@ async function exportInvoicePDF(invoiceId, skipDialog = false) {
     try {
       const iban = (settings.company.iban || '').replace(/\s/g, '');
       const bic = (settings.company.bic || '').replace(/\s/g, '');
-      const name = (settings.company.name || '').substring(0, 70);
+      // EPC QR braucht den Kontoinhaber (fallback: Firmenname)
+      const name = (settings.company.accountHolder || settings.company.name || '').substring(0, 70);
       const amount = totals.brutto.toFixed(2);
       const reference = (inv.number || '').substring(0, 140);
 
@@ -1194,6 +1195,8 @@ async function renderSettingsForm() {
   document.getElementById('settings-tax-number').value = s.company.taxNumber || '';
   document.getElementById('settings-vat-id').value = s.company.vatId || '';
   document.getElementById('settings-tax-mode').value = s.taxMode || 'kleinunternehmer';
+  const accHolderEl = document.getElementById('settings-account-holder');
+  if (accHolderEl) accHolderEl.value = s.company.accountHolder || '';
   document.getElementById('settings-bank-name').value = s.company.bankName || '';
   document.getElementById('settings-iban').value = s.company.iban || '';
   document.getElementById('settings-bic').value = s.company.bic || '';
@@ -1350,6 +1353,7 @@ async function saveSettingsForm() {
       website: document.getElementById('settings-website').value.trim(),
       taxNumber: document.getElementById('settings-tax-number').value.trim(),
       vatId: document.getElementById('settings-vat-id').value.trim(),
+      accountHolder: (document.getElementById('settings-account-holder')?.value || '').trim(),
       bankName: document.getElementById('settings-bank-name').value.trim(),
       iban: document.getElementById('settings-iban').value.trim(),
       bic: document.getElementById('settings-bic').value.trim(),
