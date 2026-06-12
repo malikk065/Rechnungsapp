@@ -52,7 +52,11 @@
       "Read(//Users/malikk/Library/Preferences/**)",
       "Read(//Users/malikk/Library/**)",
       "Bash(npm list *)",
-      "Bash(npx firebase-tools *)"
+      "Bash(npx firebase-tools *)",
+      "Bash(git rm *)",
+      "Bash(git stash *)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --msg-filter 'grep -v \"Co-Authored-By: Claude\" || true' -- --all)",
+      "Bash(./gradlew build *)"
     ]
   }
 }

@@ -131,6 +131,10 @@
           <span class="nav-icon">&#128200;</span>
           <span>Finanzen</span>
         </li>
+        <li class="nav-item" data-tab="projects">
+          <span class="nav-icon">🏷️</span>
+          <span>Projekte</span>
+        </li>
         <li class="nav-item" data-tab="donations">
           <span class="nav-icon">🤲</span>
           <span>Spenden</span>
@@ -360,6 +364,11 @@
           </div>
 
           <div class="form-group">
+            <label>Projekte <span style="color:var(--text-tertiary);font-weight:400;">(optional, Mehrfachauswahl)</span></label>
+            <div id="invoice-projects-chips" class="project-chips"></div>
+          </div>
+
+          <div class="form-group">
             <label>Bemerkungen</label>
             <textarea id="invoice-notes" rows="3" placeholder="Optionale Bemerkungen zur Rechnung..."></textarea>
           </div>
@@ -486,6 +495,9 @@
             <option value="miete">Miete & Nebenkosten</option>
             <option value="sonstiges">Sonstiges</option>
           </select>
+          <select id="filter-expense-project" onchange="renderExpensesList()" style="width:180px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);">
+            <option value="">Alle Projekte</option>
+          </select>
         </div>
         <table class="data-table" id="expenses-table">
           <thead>
@@ -600,6 +612,10 @@
                 </div>
               </div>
               <div class="form-group">
+                <label>Projekte <span style="color:var(--text-tertiary);font-weight:400;">(optional, Mehrfachauswahl möglich)</span></label>
+                <div id="expense-projects-chips" class="project-chips"></div>
+              </div>
+              <div class="form-group">
                 <label>Notizen</label>
                 <textarea id="expense-notes" rows="2" placeholder="Optionale Notizen..."></textarea>
               </div>
@@ -680,6 +696,117 @@
           <h3>Ausgaben nach Kategorie</h3>
         </div>
         <div id="expense-categories-chart"></div>
+      </section>
+
+      <!-- Projekte -->
+      <section id="tab-projects" class="tab-content">
+        <!-- Übersicht -->
+        <div id="projects-list-view">
+          <div class="tab-header">
+            <h2>Projekte</h2>
+            <button class="btn btn-primary" onclick="showProjectForm()">+ Neues Projekt</button>
+          </div>
+          <p style="color:var(--text-secondary);font-size:13px;margin-bottom:20px;">
+            Projekte sind eine zusätzliche Etikettierung — Rechnungen und Ausgaben können mehreren Projekten zugeordnet werden, ohne dass sie doppelt in der Gesamtbilanz auftauchen.
+          </p>
+          <div id="projects-grid"></div>
+          <div class="empty-state" id="projects-empty">
+            <p>Noch keine Projekte angelegt.</p>
+            <p style="color:var(--text-tertiary);font-size:13px;margin-bottom:16px;">Lege z.B. „YouCon 2026" oder „Vereinsfest" an, um diese separat auszuwerten.</p>
+            <button class="btn btn-primary" onclick="showProjectForm()">Erstes Projekt anlegen</button>
+          </div>
+        </div>
+
+        <!-- Detailansicht (initial hidden) -->
+        <div id="project-detail-view" style="display:none;">
+          <div class="tab-header" style="align-items:flex-start;">
+            <div>
+              <button class="btn btn-ghost btn-small" onclick="closeProjectDetail()" style="margin-bottom:8px;">← Zurück</button>
+              <h2 id="project-detail-title">Projekt</h2>
+              <p id="project-detail-subtitle" style="color:var(--text-secondary);font-size:13px;margin:4px 0 0 0;"></p>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn" onclick="exportProjectCSV(currentProjectId)">📊 CSV</button>
+              <button class="btn" onclick="exportProjectPDF(currentProjectId)">📄 PDF</button>
+              <button class="btn" onclick="editProjectFromDetail()">Bearbeiten</button>
+            </div>
+          </div>
+
+          <div class="stats-row">
+            <div class="stat-card">
+              <div class="stat-value" style="color:var(--success)" id="project-stat-income">0,00 €</div>
+              <div class="stat-label">Einnahmen</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="color:var(--danger)" id="project-stat-expenses">0,00 €</div>
+              <div class="stat-label">Ausgaben</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="project-stat-balance">0,00 €</div>
+              <div class="stat-label">Saldo</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="project-stat-count">0</div>
+              <div class="stat-label">Buchungen</div>
+            </div>
+          </div>
+
+          <div class="section-header" style="margin-top:24px;">
+            <h3>Einnahmen (Rechnungen)</h3>
+          </div>
+          <div id="project-invoices-list"></div>
+
+          <div class="section-header" style="margin-top:24px;">
+            <h3>Ausgaben</h3>
+          </div>
+          <div id="project-expenses-list"></div>
+        </div>
+
+        <!-- Projekt-Modal -->
+        <div class="modal" id="project-modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3 id="project-modal-title">Neues Projekt</h3>
+              <button class="btn-close" onclick="closeProjectModal()">&times;</button>
+            </div>
+            <form id="project-form" onsubmit="event.preventDefault(); saveProjectFromModal();">
+              <input type="hidden" id="project-edit-id">
+              <div class="form-row">
+                <div class="form-group" style="flex:2;">
+                  <label>Name *</label>
+                  <input type="text" id="project-name" required placeholder="z.B. YouCon 2026">
+                </div>
+                <div class="form-group" style="flex:1;">
+                  <label>Kürzel</label>
+                  <input type="text" id="project-code" placeholder="YC" maxlength="6">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:0 0 80px;">
+                  <label>Farbe</label>
+                  <input type="color" id="project-color" value="#2563eb" style="width:60px;height:42px;padding:2px;cursor:pointer;">
+                </div>
+                <div class="form-group">
+                  <label>Start (optional)</label>
+                  <input type="date" id="project-start-date">
+                </div>
+                <div class="form-group">
+                  <label>Ende (optional)</label>
+                  <input type="date" id="project-end-date">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Beschreibung</label>
+                <textarea id="project-description" rows="2" placeholder="Optionale Notizen..."></textarea>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Speichern</button>
+                <button type="button" class="btn btn-ghost" onclick="closeProjectModal()">Abbrechen</button>
+                <button type="button" class="btn btn-ghost" id="project-delete-btn" onclick="deleteProjectFromModal()" style="margin-left:auto;color:var(--danger);display:none;">Löschen</button>
+              </div>
+            </form>
+          </div>
+        </div>
       </section>
 
       <!-- Spenden -->
@@ -1366,6 +1493,11 @@
           <p style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;">Passe die Kategorien für deine Ausgaben an.</p>
           <div id="expense-categories-settings"></div>
           <button type="button" class="btn btn-small" onclick="addExpenseCategory()" style="margin-top:8px;">+ Neue Kategorie</button>
+
+          <h3>Projekte</h3>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;">Projekte sind zusätzliche Etiketten für Rechnungen und Ausgaben — perfekt, um z.B. eine Veranstaltung (YouCon, CW) separat auszuwerten, ohne dass die Buchung doppelt zählt.</p>
+          <div id="projects-settings"></div>
+          <button type="button" class="btn btn-small" onclick="addProjectFromSettings()" style="margin-top:8px;">+ Neues Projekt</button>
 
           <h3>Gespeicherte Positionen</h3>
           <p style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;">Häufig genutzte Positionen, die du beim Erstellen einer Rechnung schnell einfügen kannst.</p>

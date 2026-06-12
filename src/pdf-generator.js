@@ -1227,3 +1227,252 @@ async function generateLetterPDF({ settings, logoData, signatureData, recipient,
 
   return await doc.save();
 }
+
+// ==========================
+// PROJEKT-REPORT PDF
+// ==========================
+async function generateProjectReportPDF({ project, stats, settings, logoData, getCustomer, categories, calculateInvoiceTotal }) {
+  const { PDFDocument, rgb, StandardFonts } = PDFLib;
+  const doc = await PDFDocument.create();
+  const A4 = [595.28, 841.89];
+
+  const fontRegular = await doc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  const black = rgb(0.1, 0.1, 0.12);
+  const gray = rgb(0.4, 0.4, 0.45);
+  const lightGray = rgb(0.88, 0.88, 0.91);
+
+  // Projekt-Farbe als RGB parsen
+  const hex = (project.color || '#2563eb').replace('#', '');
+  const projColor = rgb(
+    parseInt(hex.substring(0, 2), 16) / 255,
+    parseInt(hex.substring(2, 4), 16) / 255,
+    parseInt(hex.substring(4, 6), 16) / 255,
+  );
+
+  const ml = 50, mr = 50;
+  const footerReserve = 50;
+  const ctx = { page: doc.addPage(A4), pages: [] };
+  ctx.pages.push(ctx.page);
+  const { width, height } = ctx.page.getSize();
+  let y = height - 50;
+
+  function newPage() {
+    ctx.page = doc.addPage(A4);
+    ctx.pages.push(ctx.page);
+    y = height - 50;
+  }
+  function ensureSpace(needed) {
+    if (y - needed < footerReserve) { newPage(); return true; }
+    return false;
+  }
+
+  // === HEADER ===
+  if (logoData && logoData.data) {
+    try {
+      let img;
+      if (logoData.mimeType.includes('png')) img = await doc.embedPng(Uint8Array.from(atob(logoData.data), c => c.charCodeAt(0)));
+      else img = await doc.embedJpg(Uint8Array.from(atob(logoData.data), c => c.charCodeAt(0)));
+      if (img) {
+        const d = img.scale(1);
+        const s = Math.min(150 / d.width, 50 / d.height, 1);
+        ctx.page.drawImage(img, { x: ml, y: y - d.height * s, width: d.width * s, height: d.height * s });
+      }
+    } catch (e) {}
+  }
+  // Org-Name rechts
+  const orgName = (settings.company && settings.company.name) || '';
+  if (orgName) {
+    const tw = fontBold.widthOfTextAtSize(orgName, 11);
+    ctx.page.drawText(orgName, { x: width - mr - tw, y: y - 14, size: 11, font: fontBold, color: black });
+  }
+  y -= 70;
+
+  // === Farbiger Akzentstreifen + Projektname ===
+  ctx.page.drawRectangle({ x: ml, y: y - 6, width: 4, height: 36, color: projColor });
+  ctx.page.drawText('Projektbericht', { x: ml + 14, y: y + 14, size: 9, font: fontRegular, color: gray });
+  ctx.page.drawText(project.name + (project.code ? `  (${project.code})` : ''), { x: ml + 14, y: y - 4, size: 18, font: fontBold, color: black });
+  y -= 50;
+
+  // === Meta-Infos ===
+  const metaLines = [];
+  if (project.startDate || project.endDate) {
+    const s = project.startDate ? new Date(project.startDate).toLocaleDateString('de-DE') : '—';
+    const e = project.endDate ? new Date(project.endDate).toLocaleDateString('de-DE') : 'offen';
+    metaLines.push(`Zeitraum: ${s} bis ${e}`);
+  }
+  metaLines.push(`Erstellt am: ${new Date().toLocaleDateString('de-DE')}`);
+  if (project.description) metaLines.push(project.description);
+  for (const line of metaLines) {
+    ctx.page.drawText(line, { x: ml, y, size: 9, font: fontRegular, color: gray });
+    y -= 13;
+  }
+  y -= 10;
+
+  // === Summenbox ===
+  const boxH = 60;
+  ensureSpace(boxH + 20);
+  ctx.page.drawRectangle({ x: ml, y: y - boxH, width: width - ml - mr, height: boxH, color: rgb(0.97, 0.97, 0.98) });
+  const colW = (width - ml - mr) / 3;
+  const labels = ['Einnahmen', 'Ausgaben', 'Saldo'];
+  const values = [stats.income, stats.expenses, stats.balance];
+  const colors = [rgb(0.13, 0.65, 0.36), rgb(0.86, 0.21, 0.27), stats.balance >= 0 ? rgb(0.13, 0.65, 0.36) : rgb(0.86, 0.21, 0.27)];
+  for (let i = 0; i < 3; i++) {
+    const cx = ml + colW * i + colW / 2;
+    const lbl = labels[i];
+    const lblW = fontRegular.widthOfTextAtSize(lbl, 9);
+    ctx.page.drawText(lbl, { x: cx - lblW / 2, y: y - 18, size: 9, font: fontRegular, color: gray });
+    const val = formatCurrencyPDF(values[i]);
+    const valW = fontBold.widthOfTextAtSize(val, 16);
+    ctx.page.drawText(val, { x: cx - valW / 2, y: y - 42, size: 16, font: fontBold, color: colors[i] });
+  }
+  y -= boxH + 20;
+
+  // === Helper: Table renderer mit Pagination ===
+  function drawSectionTitle(title) {
+    ensureSpace(30);
+    ctx.page.drawText(title, { x: ml, y, size: 12, font: fontBold, color: black });
+    y -= 8;
+    ctx.page.drawLine({ start: { x: ml, y }, end: { x: width - mr, y }, thickness: 0.8, color: projColor });
+    y -= 16;
+  }
+
+  function drawTableHeader(cols) {
+    ensureSpace(24);
+    ctx.page.drawRectangle({ x: ml, y: y - 14, width: width - ml - mr, height: 18, color: rgb(0.94, 0.94, 0.96) });
+    let cx = ml + 6;
+    for (const col of cols) {
+      const tw = fontBold.widthOfTextAtSize(col.label, 8);
+      const tx = col.align === 'right' ? cx + col.width - tw - 6 : cx;
+      ctx.page.drawText(col.label, { x: tx, y: y - 8, size: 8, font: fontBold, color: gray });
+      cx += col.width;
+    }
+    y -= 22;
+  }
+
+  function drawTableRow(cols, row, idx) {
+    if (idx % 2 === 1) {
+      ctx.page.drawRectangle({ x: ml, y: y - 12, width: width - ml - mr, height: 18, color: rgb(0.985, 0.985, 0.99) });
+    }
+    let cx = ml + 6;
+    for (let c = 0; c < cols.length; c++) {
+      const col = cols[c];
+      let text = row[c] == null ? '' : String(row[c]);
+      const maxW = col.width - 12;
+      while (fontRegular.widthOfTextAtSize(text, 9) > maxW && text.length > 3) text = text.slice(0, -4) + '...';
+      const tw = fontRegular.widthOfTextAtSize(text, 9);
+      const tx = col.align === 'right' ? cx + col.width - tw - 6 : cx;
+      ctx.page.drawText(text, { x: tx, y: y - 4, size: 9, font: fontRegular, color: black });
+      cx += col.width;
+    }
+    y -= 18;
+  }
+
+  // === Einnahmen-Tabelle ===
+  drawSectionTitle(`Einnahmen — ${stats.invoiceCount} Rechnung(en)`);
+  if (stats.invoices.length === 0) {
+    ctx.page.drawText('Keine Rechnungen diesem Projekt zugeordnet.', { x: ml, y, size: 9, font: fontRegular, color: gray });
+    y -= 20;
+  } else {
+    const totalW = width - ml - mr;
+    const invCols = [
+      { label: 'Datum', width: totalW * 0.13, align: 'left' },
+      { label: 'Nummer', width: totalW * 0.17, align: 'left' },
+      { label: 'Kunde', width: totalW * 0.40, align: 'left' },
+      { label: 'Netto', width: totalW * 0.10, align: 'right' },
+      { label: 'MwSt', width: totalW * 0.08, align: 'right' },
+      { label: 'Brutto', width: totalW * 0.12, align: 'right' },
+    ];
+    drawTableHeader(invCols);
+    const sortedInv = [...stats.invoices].sort((a, b) => new Date(a.date) - new Date(b.date));
+    let idx = 0;
+    for (const inv of sortedInv) {
+      if (y - 18 < footerReserve) { newPage(); drawTableHeader(invCols); }
+      const c = getCustomer ? getCustomer(inv.customerId) : null;
+      const t = calculateInvoiceTotal(inv);
+      const sign = inv.type === 'gutschrift' ? -1 : 1;
+      drawTableRow(invCols, [
+        formatDateForPDF(inv.date),
+        inv.number || '',
+        (c && c.name) || '—',
+        formatCurrencyPDF(sign * t.netto),
+        formatCurrencyPDF(sign * t.mwst),
+        formatCurrencyPDF(sign * t.brutto),
+      ], idx++);
+    }
+    // Summe
+    y -= 4;
+    ctx.page.drawLine({ start: { x: ml, y }, end: { x: width - mr, y }, thickness: 0.5, color: lightGray });
+    y -= 14;
+    const sumLabel = 'Summe Einnahmen:';
+    const sumVal = formatCurrencyPDF(stats.income);
+    const sumValW = fontBold.widthOfTextAtSize(sumVal, 10);
+    ctx.page.drawText(sumLabel, { x: width - mr - 200, y, size: 10, font: fontBold, color: black });
+    ctx.page.drawText(sumVal, { x: width - mr - sumValW, y, size: 10, font: fontBold, color: rgb(0.13, 0.65, 0.36) });
+    y -= 24;
+  }
+
+  // === Ausgaben-Tabelle ===
+  drawSectionTitle(`Ausgaben — ${stats.expenseCount} Buchung(en)`);
+  if (stats.expenseEntries.length === 0) {
+    ctx.page.drawText('Keine Ausgaben diesem Projekt zugeordnet.', { x: ml, y, size: 9, font: fontRegular, color: gray });
+    y -= 20;
+  } else {
+    const totalW = width - ml - mr;
+    const expCols = [
+      { label: 'Datum', width: totalW * 0.13, align: 'left' },
+      { label: 'Beschreibung', width: totalW * 0.45, align: 'left' },
+      { label: 'Kategorie', width: totalW * 0.27, align: 'left' },
+      { label: 'Betrag', width: totalW * 0.15, align: 'right' },
+    ];
+    drawTableHeader(expCols);
+    const sortedExp = [...stats.expenseEntries].sort((a, b) => new Date(a.date) - new Date(b.date));
+    let idx = 0;
+    for (const e of sortedExp) {
+      if (y - 18 < footerReserve) { newPage(); drawTableHeader(expCols); }
+      const cat = (categories && categories[e.category]) || { label: '', icon: '' };
+      drawTableRow(expCols, [
+        formatDateForPDF(e.date),
+        e.description || '',
+        `${cat.icon || ''} ${cat.label || ''}`.trim(),
+        `-${formatCurrencyPDF(e.amount || 0)}`,
+      ], idx++);
+    }
+    y -= 4;
+    ctx.page.drawLine({ start: { x: ml, y }, end: { x: width - mr, y }, thickness: 0.5, color: lightGray });
+    y -= 14;
+    const sumVal = '-' + formatCurrencyPDF(stats.expenses);
+    const sumValW = fontBold.widthOfTextAtSize(sumVal, 10);
+    ctx.page.drawText('Summe Ausgaben:', { x: width - mr - 200, y, size: 10, font: fontBold, color: black });
+    ctx.page.drawText(sumVal, { x: width - mr - sumValW, y, size: 10, font: fontBold, color: rgb(0.86, 0.21, 0.27) });
+    y -= 28;
+  }
+
+  // === Saldo ===
+  ensureSpace(40);
+  ctx.page.drawLine({ start: { x: ml, y }, end: { x: width - mr, y }, thickness: 1.5, color: black });
+  y -= 18;
+  const balVal = formatCurrencyPDF(stats.balance);
+  const balW = fontBold.widthOfTextAtSize(balVal, 14);
+  ctx.page.drawText('Saldo:', { x: width - mr - 200, y, size: 13, font: fontBold, color: black });
+  ctx.page.drawText(balVal, { x: width - mr - balW, y, size: 14, font: fontBold, color: stats.balance >= 0 ? rgb(0.13, 0.65, 0.36) : rgb(0.86, 0.21, 0.27) });
+
+  // === Footer auf jeder Seite ===
+  const total = ctx.pages.length;
+  for (let i = 0; i < total; i++) {
+    const p = ctx.pages[i];
+    const fy = 30;
+    p.drawLine({ start: { x: ml, y: fy + 12 }, end: { x: width - mr, y: fy + 12 }, thickness: 0.5, color: lightGray });
+    const ft = `${orgName} · Projektbericht ${project.name}`;
+    const ftW = fontRegular.widthOfTextAtSize(ft, 7);
+    p.drawText(ft, { x: (width - ftW) / 2, y: fy, size: 7, font: fontRegular, color: gray });
+    if (total > 1) {
+      const lab = `Seite ${i + 1} von ${total}`;
+      const lw = fontRegular.widthOfTextAtSize(lab, 7);
+      p.drawText(lab, { x: width - mr - lw, y: fy + 18, size: 7, font: fontRegular, color: gray });
+    }
+  }
+
+  return await doc.save();
+}

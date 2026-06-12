@@ -883,6 +883,82 @@ class Store {
     return `${prefix}-${year}-${String(nextNum).padStart(3, '0')}`;
   }
 
+  // --- Projekte ---
+  // Projekte werden in settings.projects als Array verwaltet.
+  // Eine Ausgabe/Rechnung kann mit projectIds: [...] mehreren Projekten zugeordnet werden.
+
+  getProjects() {
+    return (this.settings && this.settings.projects) || [];
+  }
+
+  getProject(id) {
+    return this.getProjects().find(p => p.id === id);
+  }
+
+  async addProject(project) {
+    if (!this.settings) this.settings = {};
+    if (!this.settings.projects) this.settings.projects = [];
+    project.id = project.id || this.generateId();
+    project.createdAt = new Date().toISOString();
+    project.archived = false;
+    this.settings.projects.push(project);
+    await this.saveSettings(this.settings);
+    return project;
+  }
+
+  async updateProject(id, data) {
+    if (!this.settings || !this.settings.projects) return;
+    const idx = this.settings.projects.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    this.settings.projects[idx] = { ...this.settings.projects[idx], ...data };
+    await this.saveSettings(this.settings);
+  }
+
+  async deleteProject(id) {
+    if (!this.settings || !this.settings.projects) return;
+    this.settings.projects = this.settings.projects.filter(p => p.id !== id);
+    await this.saveSettings(this.settings);
+    // Hinweis: Buchungen mit dieser projectId behalten ihren Verweis (für Audit).
+    // In der Anzeige fallen sie dann unter "Unbekanntes Projekt".
+  }
+
+  // Statistiken zu einem Projekt: Einnahmen (Rechnungen) + Ausgaben + Saldo
+  getProjectStats(projectId, { from = null, to = null } = {}) {
+    const inRange = (dateStr) => {
+      if (!dateStr) return true;
+      const d = new Date(dateStr);
+      if (from && d < new Date(from)) return false;
+      if (to && d > new Date(to)) return false;
+      return true;
+    };
+
+    const matches = (entry) => {
+      const ids = entry.projectIds || [];
+      return ids.includes(projectId);
+    };
+
+    const invoices = this.invoices.filter(inv => matches(inv) && inRange(inv.date));
+    const expenses = this.expenses.filter(exp => matches(exp) && inRange(exp.date));
+
+    let income = 0;
+    for (const inv of invoices) {
+      const totals = this.calculateInvoiceTotal(inv);
+      const sign = inv.type === 'gutschrift' ? -1 : 1;
+      income += sign * totals.brutto;
+    }
+    const expenseSum = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+    return {
+      income: Math.round(income * 100) / 100,
+      expenses: Math.round(expenseSum * 100) / 100,
+      balance: Math.round((income - expenseSum) * 100) / 100,
+      invoices,
+      expenseEntries: expenses,
+      invoiceCount: invoices.length,
+      expenseCount: expenses.length,
+    };
+  }
+
   // --- Helpers ---
   generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);

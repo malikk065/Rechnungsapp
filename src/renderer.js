@@ -386,6 +386,7 @@ function switchTab(tabName) {
   if (tabName === 'new-invoice') updateInvoiceForm();
   if (tabName === 'shopping') renderShoppingList();
   if (tabName === 'orgs') renderOrgsList();
+  if (tabName === 'projects') renderProjectsList();
 }
 
 // --- Toast (New) ---
@@ -673,6 +674,7 @@ function editInvoice(id) {
   document.getElementById('invoice-due-days').value = inv.dueDays || 14;
   document.getElementById('invoice-notes').value = inv.notes || '';
   document.getElementById('invoice-payment-method').value = inv.paymentMethod || 'ueberweisung';
+  renderProjectChips('invoice-projects-chips', inv.projectIds || []);
 
   currentInvoiceItems = JSON.parse(JSON.stringify(inv.items || []));
   renderInvoiceItems();
@@ -830,6 +832,7 @@ function resetInvoiceForm() {
   document.getElementById('invoice-payment-method').value = 'ueberweisung';
   document.getElementById('invoice-notes').value = '';
   currentInvoiceItems = [];
+  renderProjectChips('invoice-projects-chips', []);
   addInvoiceItem();
   recalculateInvoice();
 }
@@ -843,6 +846,7 @@ function collectInvoiceData() {
     notes: document.getElementById('invoice-notes').value,
     items: currentInvoiceItems.filter((item) => item.description.trim() !== ''),
     taxMode: store.settings.taxMode,
+    projectIds: getSelectedProjectIds('invoice-projects-chips'),
   };
 }
 
@@ -1219,6 +1223,8 @@ async function renderSettingsForm() {
   updateNumberPreview();
   loadExpenseCategories();
   renderExpenseCategoriesSettings();
+  renderProjectsSettings();
+  updateProjectDropdowns();
   renderSavedItemsList();
   renderFirebaseStatus();
 }
@@ -2126,12 +2132,354 @@ async function saveExpenseCategoriesToSettings() {
   updateCategoryDropdowns();
 }
 
+// ==========================
+// PROJEKTE
+// ==========================
+
+let currentProjectId = null;
+const DEFAULT_PROJECT_COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+
+function getProjectColor(p) {
+  return (p && p.color) || '#2563eb';
+}
+
+// --- Projekte-Verwaltung in Settings ---
+function renderProjectsSettings() {
+  const container = document.getElementById('projects-settings');
+  if (!container) return;
+  const projects = store.getProjects();
+  if (projects.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-tertiary);font-size:12px;font-style:italic;">Noch keine Projekte angelegt.</p>';
+    return;
+  }
+  container.innerHTML = projects.map(p => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--bg-secondary);">
+      <span style="width:14px;height:14px;border-radius:50%;background:${escapeHtml(getProjectColor(p))};flex-shrink:0;"></span>
+      <strong style="flex:1;">${escapeHtml(p.name)}</strong>
+      ${p.code ? `<span class="proj-badge" style="background:${escapeHtml(getProjectColor(p))};">${escapeHtml(p.code)}</span>` : ''}
+      <button type="button" class="btn-icon" onclick="showProjectForm('${p.id}')" title="Bearbeiten">&#9998;</button>
+    </div>
+  `).join('');
+}
+
+function addProjectFromSettings() {
+  showProjectForm();
+}
+
+// --- Projekt-Modal ---
+function showProjectForm(editId) {
+  const modal = document.getElementById('project-modal');
+  const title = document.getElementById('project-modal-title');
+  const delBtn = document.getElementById('project-delete-btn');
+
+  document.getElementById('project-edit-id').value = editId || '';
+
+  if (editId) {
+    const p = store.getProject(editId);
+    if (!p) return;
+    title.textContent = 'Projekt bearbeiten';
+    document.getElementById('project-name').value = p.name || '';
+    document.getElementById('project-code').value = p.code || '';
+    document.getElementById('project-color').value = p.color || '#2563eb';
+    document.getElementById('project-start-date').value = p.startDate || '';
+    document.getElementById('project-end-date').value = p.endDate || '';
+    document.getElementById('project-description').value = p.description || '';
+    delBtn.style.display = '';
+  } else {
+    title.textContent = 'Neues Projekt';
+    document.getElementById('project-form').reset();
+    const used = store.getProjects().length;
+    document.getElementById('project-color').value = DEFAULT_PROJECT_COLORS[used % DEFAULT_PROJECT_COLORS.length];
+    delBtn.style.display = 'none';
+  }
+  modal.classList.add('active');
+}
+
+function closeProjectModal() {
+  document.getElementById('project-modal').classList.remove('active');
+}
+
+async function saveProjectFromModal() {
+  const editId = document.getElementById('project-edit-id').value;
+  const data = {
+    name: document.getElementById('project-name').value.trim(),
+    code: document.getElementById('project-code').value.trim().toUpperCase(),
+    color: document.getElementById('project-color').value,
+    startDate: document.getElementById('project-start-date').value,
+    endDate: document.getElementById('project-end-date').value,
+    description: document.getElementById('project-description').value.trim(),
+  };
+  if (!data.name) {
+    showToast('Bitte Namen eingeben', 'error');
+    return;
+  }
+  if (editId) {
+    await store.updateProject(editId, data);
+    showToast('Projekt aktualisiert', 'success');
+  } else {
+    await store.addProject(data);
+    showToast('Projekt angelegt', 'success');
+  }
+  closeProjectModal();
+  renderProjectsSettings();
+  updateProjectDropdowns();
+  renderProjectsList();
+}
+
+async function deleteProjectFromModal() {
+  const id = document.getElementById('project-edit-id').value;
+  if (!id) return;
+  const ok = await showConfirm({
+    title: 'Projekt löschen',
+    message: 'Das Projekt wird entfernt. Bestehende Buchungen bleiben in der Hauptbilanz erhalten, verlieren aber die Projekt-Zuordnung.',
+    icon: '🗑️',
+    confirmText: 'Löschen',
+  });
+  if (!ok) return;
+  await store.deleteProject(id);
+  closeProjectModal();
+  renderProjectsSettings();
+  updateProjectDropdowns();
+  renderProjectsList();
+  showToast('Projekt gelöscht');
+}
+
+// --- Dropdowns aktualisieren ---
+function updateProjectDropdowns() {
+  const filter = document.getElementById('filter-expense-project');
+  if (filter) {
+    const cur = filter.value;
+    let html = '<option value="">Alle Projekte</option><option value="_none">Ohne Projekt</option>';
+    for (const p of store.getProjects()) {
+      html += `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`;
+    }
+    filter.innerHTML = html;
+    if (cur && filter.querySelector(`option[value="${cur}"]`)) filter.value = cur;
+  }
+}
+
+// --- Chip Multi-Selector ---
+function renderProjectChips(containerId, selectedIds = []) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const projects = store.getProjects();
+  if (projects.length === 0) {
+    container.innerHTML = '<span class="project-chip-empty">Noch keine Projekte angelegt — leg in den Einstellungen welche an.</span>';
+    return;
+  }
+  const selected = new Set(selectedIds);
+  container.innerHTML = projects.map(p => {
+    const isActive = selected.has(p.id);
+    const color = getProjectColor(p);
+    return `<span class="project-chip ${isActive ? 'active' : ''}" data-project-id="${escapeHtml(p.id)}" style="--proj-color:${escapeHtml(color)};" onclick="toggleProjectChip(this)">
+      <span class="project-chip-dot"></span>
+      ${escapeHtml(p.name)}${p.code ? ` (${escapeHtml(p.code)})` : ''}
+    </span>`;
+  }).join('');
+}
+
+function toggleProjectChip(el) {
+  el.classList.toggle('active');
+}
+
+function getSelectedProjectIds(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return [];
+  return [...container.querySelectorAll('.project-chip.active')].map(c => c.dataset.projectId);
+}
+
+// --- Projekt-Übersicht (Cards) ---
+function renderProjectsList() {
+  const grid = document.getElementById('projects-grid');
+  const empty = document.getElementById('projects-empty');
+  if (!grid || !empty) return;
+
+  // Detail-View ggf. zurücksetzen
+  document.getElementById('projects-list-view').style.display = '';
+  document.getElementById('project-detail-view').style.display = 'none';
+
+  const projects = store.getProjects();
+  if (projects.length === 0) {
+    grid.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  grid.style.display = '';
+  empty.style.display = 'none';
+
+  grid.innerHTML = projects.map(p => {
+    const stats = store.getProjectStats(p.id);
+    const balanceClass = stats.balance > 0 ? 'positive' : stats.balance < 0 ? 'negative' : '';
+    return `<div class="project-card" style="--proj-color:${escapeHtml(getProjectColor(p))};" onclick="openProjectDetail('${escapeHtml(p.id)}')">
+      <div class="project-card-header">
+        <h4 class="project-card-name">${escapeHtml(p.name)}</h4>
+        ${p.code ? `<span class="project-card-code">${escapeHtml(p.code)}</span>` : ''}
+      </div>
+      ${p.description ? `<p style="font-size:12px;color:var(--text-secondary);margin:0 0 12px 0;">${escapeHtml(p.description)}</p>` : ''}
+      <div class="project-card-stats">
+        <div>
+          <div class="project-card-stat-label">Einnahmen</div>
+          <div class="project-card-stat-value positive">${formatCurrency(stats.income)}</div>
+        </div>
+        <div>
+          <div class="project-card-stat-label">Ausgaben</div>
+          <div class="project-card-stat-value negative">${formatCurrency(stats.expenses)}</div>
+        </div>
+        <div>
+          <div class="project-card-stat-label">Saldo</div>
+          <div class="project-card-stat-value ${balanceClass}">${formatCurrency(stats.balance)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// --- Projekt-Detail ---
+function openProjectDetail(id) {
+  const p = store.getProject(id);
+  if (!p) return;
+  currentProjectId = id;
+
+  document.getElementById('projects-list-view').style.display = 'none';
+  document.getElementById('project-detail-view').style.display = '';
+
+  document.getElementById('project-detail-title').textContent = p.name + (p.code ? ` (${p.code})` : '');
+  const sub = [];
+  if (p.startDate || p.endDate) {
+    sub.push(`Zeitraum: ${p.startDate ? formatDate(p.startDate) : '—'} bis ${p.endDate ? formatDate(p.endDate) : 'offen'}`);
+  }
+  if (p.description) sub.push(p.description);
+  document.getElementById('project-detail-subtitle').textContent = sub.join(' · ');
+
+  const stats = store.getProjectStats(id);
+  document.getElementById('project-stat-income').textContent = formatCurrency(stats.income);
+  document.getElementById('project-stat-expenses').textContent = formatCurrency(stats.expenses);
+  document.getElementById('project-stat-balance').textContent = formatCurrency(stats.balance);
+  document.getElementById('project-stat-count').textContent = stats.invoiceCount + stats.expenseCount;
+
+  // Einnahmen
+  const invHtml = stats.invoices.length === 0
+    ? '<p style="color:var(--text-tertiary);font-size:13px;font-style:italic;padding:8px 0;">Keine Rechnungen zugeordnet.</p>'
+    : `<table class="data-table"><thead><tr><th>Datum</th><th>Nummer</th><th>Kunde</th><th style="text-align:right;">Betrag</th></tr></thead><tbody>${
+        stats.invoices.sort((a,b) => new Date(b.date) - new Date(a.date)).map(inv => {
+          const c = store.getCustomer ? store.getCustomer(inv.customerId) : null;
+          const t = store.calculateInvoiceTotal(inv);
+          const sign = inv.type === 'gutschrift' ? '-' : '';
+          return `<tr><td>${formatDate(inv.date)}</td><td><strong>${escapeHtml(inv.number)}</strong></td><td>${escapeHtml((c && c.name) || '—')}</td><td style="text-align:right;"><strong>${sign}${formatCurrency(t.brutto)}</strong></td></tr>`;
+        }).join('')
+      }</tbody></table>`;
+  document.getElementById('project-invoices-list').innerHTML = invHtml;
+
+  // Ausgaben
+  const expHtml = stats.expenseEntries.length === 0
+    ? '<p style="color:var(--text-tertiary);font-size:13px;font-style:italic;padding:8px 0;">Keine Ausgaben zugeordnet.</p>'
+    : `<table class="data-table"><thead><tr><th>Datum</th><th>Beschreibung</th><th>Kategorie</th><th style="text-align:right;">Betrag</th></tr></thead><tbody>${
+        stats.expenseEntries.sort((a,b) => new Date(b.date) - new Date(a.date)).map(e => {
+          const cat = EXPENSE_CATEGORIES[e.category] || EXPENSE_CATEGORIES.sonstiges || { label: '—', icon: '' };
+          return `<tr><td>${formatDate(e.date)}</td><td><strong>${escapeHtml(e.description)}</strong></td><td>${cat.icon || ''} ${escapeHtml(cat.label || '')}</td><td style="text-align:right;"><strong>${formatCurrency(e.amount)}</strong></td></tr>`;
+        }).join('')
+      }</tbody></table>`;
+  document.getElementById('project-expenses-list').innerHTML = expHtml;
+}
+
+function closeProjectDetail() {
+  currentProjectId = null;
+  renderProjectsList();
+}
+
+function editProjectFromDetail() {
+  if (currentProjectId) showProjectForm(currentProjectId);
+}
+
+// --- Export: CSV ---
+function exportProjectCSV(id) {
+  const p = store.getProject(id);
+  if (!p) return;
+  const stats = store.getProjectStats(id);
+
+  const rows = [['Datum', 'Typ', 'Nummer/Beschreibung', 'Kunde/Kategorie', 'Netto', 'MwSt', 'Brutto/Betrag']];
+
+  for (const inv of stats.invoices) {
+    const c = store.getCustomer ? store.getCustomer(inv.customerId) : null;
+    const t = store.calculateInvoiceTotal(inv);
+    const sign = inv.type === 'gutschrift' ? -1 : 1;
+    rows.push([
+      inv.date || '',
+      inv.type === 'gutschrift' ? 'Gutschrift' : 'Rechnung',
+      inv.number || '',
+      (c && c.name) || '',
+      (sign * t.netto).toFixed(2).replace('.', ','),
+      (sign * t.mwst).toFixed(2).replace('.', ','),
+      (sign * t.brutto).toFixed(2).replace('.', ','),
+    ]);
+  }
+  for (const e of stats.expenseEntries) {
+    const cat = EXPENSE_CATEGORIES[e.category] || EXPENSE_CATEGORIES.sonstiges || { label: '' };
+    rows.push([
+      e.date || '',
+      'Ausgabe',
+      e.description || '',
+      cat.label || '',
+      '',
+      '',
+      `-${Number(e.amount || 0).toFixed(2).replace('.', ',')}`,
+    ]);
+  }
+  rows.push([]);
+  rows.push(['', '', '', 'Einnahmen gesamt:', '', '', stats.income.toFixed(2).replace('.', ',')]);
+  rows.push(['', '', '', 'Ausgaben gesamt:', '', '', (-stats.expenses).toFixed(2).replace('.', ',')]);
+  rows.push(['', '', '', 'Saldo:', '', '', stats.balance.toFixed(2).replace('.', ',')]);
+
+  const csv = '﻿' + rows.map(r => r.map(c => {
+    const s = String(c == null ? '' : c);
+    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(';')).join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Projekt_${p.code || p.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exportiert', 'success');
+}
+
+// --- Export: PDF ---
+async function exportProjectPDF(id) {
+  const p = store.getProject(id);
+  if (!p) return;
+  const stats = store.getProjectStats(id);
+  const settings = store.settings || {};
+  const logoData = await getLogoData();
+
+  try {
+    const pdfBytes = await generateProjectReportPDF({
+      project: p,
+      stats,
+      settings,
+      logoData,
+      getCustomer: (cid) => store.getCustomer && store.getCustomer(cid),
+      categories: EXPENSE_CATEGORIES,
+      calculateInvoiceTotal: (inv) => store.calculateInvoiceTotal(inv),
+    });
+    const fileName = `Projekt_${(p.code || p.name).replace(/[^a-zA-Z0-9_-]/g, '_')}_${new Date().toISOString().split('T')[0]}`;
+    await window.api.saveAutoPDF(pdfBytes, fileName);
+    showPdfPreview(pdfBytes, `Projekt — ${p.name}`, fileName);
+  } catch (err) {
+    console.error('Projekt-PDF Fehler:', err);
+    showToast('PDF konnte nicht erstellt werden', 'error');
+  }
+}
+
 function renderExpensesList() {
   const tbody = document.getElementById('expenses-tbody');
   const empty = document.getElementById('expenses-empty');
   const table = document.getElementById('expenses-table');
   const catFilter = document.getElementById('filter-expense-category').value;
   const teamFilter = document.getElementById('filter-expense-team').value;
+
+  const projectFilter = (document.getElementById('filter-expense-project') || {}).value || '';
 
   let expenses = [...store.expenses];
   if (catFilter) {
@@ -2141,6 +2489,11 @@ function renderExpensesList() {
     expenses = expenses.filter(e => !e.teamId);
   } else if (teamFilter) {
     expenses = expenses.filter(e => e.teamId === teamFilter);
+  }
+  if (projectFilter === '_none') {
+    expenses = expenses.filter(e => !e.projectIds || e.projectIds.length === 0);
+  } else if (projectFilter) {
+    expenses = expenses.filter(e => (e.projectIds || []).includes(projectFilter));
   }
 
   // Stats
@@ -2171,9 +2524,18 @@ function renderExpensesList() {
     const teamName = exp.teamId ? (teams.find(t => t.id === exp.teamId) || {}).name : '';
     const submitter = exp.submittedBy ? `<span class="badge" style="background:var(--accent-subtle);color:var(--accent);font-size:10px;padding:2px 8px;margin-left:6px;">${escapeHtml(exp.submittedBy)}</span>` : '';
     const teamBadge = teamName ? `<span class="badge" style="background:var(--warning-subtle);color:var(--warning);font-size:10px;padding:2px 8px;margin-left:4px;">${escapeHtml(teamName)}</span>` : '';
+    // Projekt-Badges
+    let projBadges = '';
+    if (exp.projectIds && exp.projectIds.length > 0) {
+      projBadges = exp.projectIds.map(pid => {
+        const p = store.getProject(pid);
+        if (!p) return '';
+        return `<span class="proj-badge" style="background:${escapeHtml(getProjectColor(p))};margin-left:4px;">${escapeHtml(p.code || p.name)}</span>`;
+      }).join('');
+    }
     return `<tr>
       <td>${formatDate(exp.date)}</td>
-      <td><strong>${escapeHtml(exp.description)}</strong>${submitter}${teamBadge}${exp.notes && !exp.submittedBy ? `<br><small style="color:var(--text-tertiary)">${escapeHtml(exp.notes)}</small>` : ''}</td>
+      <td><strong>${escapeHtml(exp.description)}</strong>${submitter}${teamBadge}${projBadges}${exp.notes && !exp.submittedBy ? `<br><small style="color:var(--text-tertiary)">${escapeHtml(exp.notes)}</small>` : ''}</td>
       <td><span style="display:inline-flex;align-items:center;gap:4px;">${cat.icon} ${cat.label}</span></td>
       <td><strong>${formatCurrency(exp.amount)}</strong></td>
       <td>
@@ -2197,11 +2559,13 @@ function showExpenseForm(expense = null) {
     document.getElementById('expense-category').value = expense.category || 'sonstiges';
     document.getElementById('expense-tax').value = expense.taxRate != null ? expense.taxRate : 19;
     document.getElementById('expense-notes').value = expense.notes || '';
+    renderProjectChips('expense-projects-chips', expense.projectIds || []);
   } else {
     title.textContent = 'Neue Ausgabe';
     document.getElementById('expense-edit-id').value = '';
     document.getElementById('expense-form').reset();
     document.getElementById('expense-date').value = new Date().toISOString().split('T')[0];
+    renderProjectChips('expense-projects-chips', []);
   }
 
   modal.classList.add('active');
@@ -2234,6 +2598,7 @@ async function saveExpense() {
     category: document.getElementById('expense-category').value,
     taxRate: parseInt(document.getElementById('expense-tax').value),
     notes: document.getElementById('expense-notes').value.trim(),
+    projectIds: getSelectedProjectIds('expense-projects-chips'),
   };
 
   if (!data.description || !data.amount) {
