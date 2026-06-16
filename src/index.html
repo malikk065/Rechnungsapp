@@ -572,6 +572,22 @@
             </div>
             <form id="expense-form">
               <input type="hidden" id="expense-edit-id">
+
+              <!-- Beleg-Scan -->
+              <div id="receipt-scan-zone" class="receipt-scan-zone" onclick="scanReceiptForExpense()">
+                <div id="receipt-scan-idle">
+                  <span style="font-size:22px;">📷</span>
+                  <div>
+                    <strong>Beleg scannen</strong>
+                    <p>Foto einer Quittung wählen — Betrag, Datum &amp; Händler werden automatisch erkannt</p>
+                  </div>
+                </div>
+                <div id="receipt-scan-busy" style="display:none;">
+                  <span class="receipt-spinner"></span>
+                  <span id="receipt-scan-status">Beleg wird gelesen…</span>
+                </div>
+              </div>
+
               <div class="form-row">
                 <div class="form-group">
                   <label>Datum *</label>

@@ -56,7 +56,17 @@
       "Bash(git rm *)",
       "Bash(git stash *)",
       "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --msg-filter 'grep -v \"Co-Authored-By: Claude\" || true' -- --all)",
-      "Bash(./gradlew build *)"
+      "Bash(./gradlew build *)",
+      "Bash(which convert *)",
+      "Bash(printf 'REWE Markt GmbH\\\\n\\\\nSUMME EUR 12,49\\\\n\\\\nDatum: 16.06.2026\\\\n')",
+      "Bash(cupsfilter bon.txt)",
+      "Bash(sips -s format png -z 400 600 bon.pdf --out bon.png)",
+      "Bash(grep -v \"^$\")",
+      "Bash(sips -g pixelWidth -g pixelHeight bon.png)",
+      "Bash(sips -s format png bon.pdf --out bon2.png)",
+      "Bash(sips -g pixelWidth -g pixelHeight bon2.png)",
+      "Bash(sips --resampleWidth 1224 bon2.png --out bon3.png)",
+      "Bash(node -e ' *)"
     ]
   }
 }

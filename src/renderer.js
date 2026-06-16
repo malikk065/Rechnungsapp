@@ -2563,6 +2563,7 @@ function renderExpensesList() {
 function showExpenseForm(expense = null) {
   const modal = document.getElementById('expense-modal');
   const title = document.getElementById('expense-modal-title');
+  resetReceiptScanZone();
 
   if (expense) {
     title.textContent = 'Ausgabe bearbeiten';
@@ -2587,6 +2588,176 @@ function showExpenseForm(expense = null) {
 
 function closeExpenseModal() {
   document.getElementById('expense-modal').classList.remove('active');
+  resetReceiptScanZone();
+}
+
+// ==========================
+// BELEG-SCAN (OCR, lokal)
+// ==========================
+function resetReceiptScanZone() {
+  const idle = document.getElementById('receipt-scan-idle');
+  const busy = document.getElementById('receipt-scan-busy');
+  if (idle) idle.style.display = 'flex';
+  if (busy) busy.style.display = 'none';
+}
+
+async function scanReceiptForExpense() {
+  if (!window.api || !window.api.pickReceiptImage) {
+    showToast('Beleg-Scan nur in der Desktop-App verfügbar', 'error');
+    return;
+  }
+  const idle = document.getElementById('receipt-scan-idle');
+  const busy = document.getElementById('receipt-scan-busy');
+  const status = document.getElementById('receipt-scan-status');
+
+  try {
+    const picked = await window.api.pickReceiptImage();
+    if (!picked) return; // abgebrochen
+
+    idle.style.display = 'none';
+    busy.style.display = 'flex';
+    status.textContent = 'Beleg wird gelesen… (kann beim ersten Mal etwas dauern)';
+
+    const result = await window.api.scanReceipt({ base64: picked.base64, mimeType: picked.mimeType });
+    resetReceiptScanZone();
+
+    if (!result || !result.ok) {
+      showToast('Beleg konnte nicht gelesen werden' + (result && result.error ? `: ${result.error}` : ''), 'error');
+      return;
+    }
+
+    const parsed = parseReceiptText(result.text || '');
+    let filled = [];
+
+    if (parsed.amount != null) {
+      document.getElementById('expense-amount').value = parsed.amount.toFixed(2);
+      filled.push('Betrag');
+    }
+    if (parsed.date) {
+      document.getElementById('expense-date').value = parsed.date;
+      filled.push('Datum');
+    }
+    if (parsed.vendor) {
+      const descEl = document.getElementById('expense-description');
+      if (!descEl.value.trim()) {
+        descEl.value = parsed.vendor;
+        filled.push('Händler');
+      }
+    }
+    if (parsed.category) {
+      const catEl = document.getElementById('expense-category');
+      if (catEl.querySelector(`option[value="${parsed.category}"]`)) {
+        catEl.value = parsed.category;
+        filled.push('Kategorie');
+      }
+    }
+
+    if (filled.length > 0) {
+      showToast(`Erkannt: ${filled.join(', ')} — bitte prüfen`, 'success');
+    } else {
+      showToast('Nichts Verwertbares erkannt — bitte manuell eintragen', 'error');
+    }
+  } catch (err) {
+    console.error('Beleg-Scan Fehler:', err);
+    resetReceiptScanZone();
+    showToast('Beleg-Scan fehlgeschlagen', 'error');
+  }
+}
+
+// Parser für deutsche Belege/Quittungen
+function parseReceiptText(text) {
+  const result = { amount: null, date: null, vendor: null, category: null };
+  if (!text) return result;
+
+  const rawLines = text.split('\n').map(l => l.trim());
+  const lines = rawLines.filter(l => l.length > 0);
+  const lower = text.toLowerCase();
+
+  // --- Betrag ---
+  // Alle Geldbeträge finden (deutsch: 1.234,56 oder 1234,56; auch mit . als Dezimal)
+  const amountRegex = /(\d{1,3}(?:[.\s]\d{3})*|\d+)[.,](\d{2})(?!\d)/g;
+  function toNumber(intPart, decPart) {
+    const cleaned = intPart.replace(/[.\s]/g, '');
+    return parseFloat(cleaned + '.' + decPart);
+  }
+
+  // 1. Bevorzugt: Zeile mit Schlüsselwort (Summe/Gesamt/Total/zu zahlen/Betrag)
+  const totalKeywords = ['summe', 'gesamt', 'gesamtbetrag', 'zu zahlen', 'zu zahlen', 'total', 'betrag', 'rechnungsbetrag', 'endbetrag', 'eur'];
+  let bestKeywordAmount = null;
+  for (const line of lines) {
+    const ll = line.toLowerCase();
+    // "MwSt"/"Netto"-Zeilen überspringen für die Hauptsumme
+    const isSubtotal = /\b(mwst|mehrwertsteuer|netto|ust|enthalten|rückgeld|ruckgeld|gegeben|bar|kartenzahlung|trinkgeld)\b/.test(ll);
+    if (totalKeywords.some(k => ll.includes(k))) {
+      const matches = [...line.matchAll(amountRegex)];
+      if (matches.length > 0) {
+        const val = toNumber(matches[matches.length - 1][1], matches[matches.length - 1][2]);
+        if (!isSubtotal && (bestKeywordAmount == null || val > bestKeywordAmount)) {
+          bestKeywordAmount = val;
+        }
+      }
+    }
+  }
+
+  if (bestKeywordAmount != null) {
+    result.amount = bestKeywordAmount;
+  } else {
+    // 2. Fallback: größter gefundener Betrag im ganzen Text
+    const all = [...text.matchAll(amountRegex)].map(m => toNumber(m[1], m[2]));
+    if (all.length > 0) {
+      result.amount = Math.max(...all);
+    }
+  }
+
+  // --- Datum ---
+  // DD.MM.YYYY oder DD.MM.YY (auch mit / oder -)
+  const dateMatch = text.match(/\b(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})\b/);
+  if (dateMatch) {
+    let [, d, m, y] = dateMatch;
+    d = d.padStart(2, '0');
+    m = m.padStart(2, '0');
+    if (y.length === 2) y = (parseInt(y) > 70 ? '19' : '20') + y;
+    // Plausibilitätscheck
+    const dd = parseInt(d), mm = parseInt(m);
+    if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
+      result.date = `${y}-${m}-${d}`;
+    }
+  }
+
+  // --- Händler --- (erste sinnvolle Zeile, keine reine Zahl/Adresse)
+  for (const line of lines.slice(0, 5)) {
+    const ll = line.toLowerCase();
+    const isNumeric = /^[\d\s.,€:-]+$/.test(line);
+    const isMeta = /\b(rechnung|quittung|beleg|kassenbon|datum|uhr|tel|str\.|straße|strasse)\b/.test(ll);
+    if (!isNumeric && line.length >= 3 && line.length <= 40 && !isMeta) {
+      result.vendor = line.replace(/\s+/g, ' ');
+      break;
+    }
+  }
+  // Falls nichts gefunden: erste nicht-numerische Zeile
+  if (!result.vendor) {
+    const firstText = lines.find(l => !/^[\d\s.,€:-]+$/.test(l) && l.length >= 3);
+    if (firstText) result.vendor = firstText.slice(0, 40);
+  }
+
+  // --- Kategorie raten anhand Schlüsselwörtern ---
+  const catRules = [
+    { cat: 'fahrt', words: ['tankstelle', 'aral', 'shell', 'esso', 'jet', 'total', 'benzin', 'diesel', 'sprit', 'bahn', 'db ', 'ticket', 'parkhaus', 'parken', 'taxi'] },
+    { cat: 'material', words: ['baumarkt', 'obi', 'bauhaus', 'hornbach', 'material', 'werkzeug'] },
+    { cat: 'buero', words: ['müller', 'staples', 'büro', 'buero', 'papier', 'drucker', 'mcpaper', 'thalia'] },
+    { cat: 'software', words: ['microsoft', 'adobe', 'apple', 'google', 'software', 'lizenz', 'abo', 'subscription'] },
+    { cat: 'telefon', words: ['telekom', 'vodafone', 'o2', 'mobilfunk', 'internet', '1&1'] },
+    { cat: 'werbung', words: ['werbung', 'marketing', 'facebook', 'instagram', 'flyer', 'druck'] },
+    { cat: 'material', words: ['rewe', 'edeka', 'aldi', 'lidl', 'kaufland', 'penny', 'netto', 'metro', 'getränke', 'getranke'] },
+  ];
+  for (const rule of catRules) {
+    if (rule.words.some(w => lower.includes(w))) {
+      result.category = rule.cat;
+      break;
+    }
+  }
+
+  return result;
 }
 
 function editExpense(id) {

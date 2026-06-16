@@ -679,6 +679,83 @@ ipcMain.handle('qrcode:generate', async (_event, text) => {
   }
 });
 
+// ==========================
+// OCR — Beleg-Scan (Tesseract.js, lokal & offline)
+// ==========================
+let _ocrWorker = null;
+
+async function getOcrWorker() {
+  if (_ocrWorker) return _ocrWorker;
+  const { createWorker } = require('tesseract.js');
+  // Sprachdaten im userData-Ordner cachen (einmalig laden, dann offline)
+  const cachePath = path.join(app.getPath('userData'), 'ocr-cache');
+  if (!fs.existsSync(cachePath)) fs.mkdirSync(cachePath, { recursive: true });
+  _ocrWorker = await createWorker('deu', 1, {
+    cachePath,
+    // Worker/Core werden in Node-Mode automatisch aus node_modules aufgelöst
+  });
+  return _ocrWorker;
+}
+
+ipcMain.handle('ocr:scanReceipt', async (_event, payload) => {
+  // payload: { base64, mimeType } ODER { filePath }
+  try {
+    const worker = await getOcrWorker();
+    let imageInput;
+    if (payload && payload.filePath && fs.existsSync(payload.filePath)) {
+      imageInput = payload.filePath;
+    } else if (payload && payload.base64) {
+      imageInput = Buffer.from(payload.base64, 'base64');
+    } else {
+      return { ok: false, error: 'Kein Bild übergeben' };
+    }
+
+    // Kleine Bilder hochskalieren — Tesseract braucht ausreichende Auflösung.
+    // nativeImage ist in Electron eingebaut, keine Zusatz-Library nötig.
+    try {
+      const { nativeImage } = require('electron');
+      const img = typeof imageInput === 'string'
+        ? nativeImage.createFromPath(imageInput)
+        : nativeImage.createFromBuffer(imageInput);
+      const size = img.getSize();
+      if (size.width > 0 && size.width < 1000) {
+        const factor = Math.ceil(1200 / size.width);
+        const resized = img.resize({ width: size.width * factor, quality: 'best' });
+        imageInput = resized.toPNG();
+      }
+    } catch (resizeErr) {
+      // Wenn Skalierung fehlschlägt, Original verwenden
+      console.warn('Bild-Skalierung übersprungen:', resizeErr.message);
+    }
+
+    const { data } = await worker.recognize(imageInput);
+    return { ok: true, text: data.text || '', confidence: data.confidence };
+  } catch (e) {
+    console.error('OCR-Fehler:', e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+// Bild-Datei auswählen (für Beleg-Scan) und Base64 zurückgeben
+ipcMain.handle('ocr:pickImage', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Beleg / Quittung auswählen',
+    properties: ['openFile'],
+    filters: [{ name: 'Bilder', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const sourcePath = result.filePaths[0];
+  try {
+    const buf = fs.readFileSync(sourcePath);
+    const ext = path.extname(sourcePath).toLowerCase().replace('.', '');
+    const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+    return { base64: buf.toString('base64'), mimeType, fileName: path.basename(sourcePath), filePath: sourcePath };
+  } catch (e) {
+    console.error('Bild-Lese-Fehler:', e.message);
+    return null;
+  }
+});
+
 // Fonts laden für PDF
 ipcMain.handle('font:load', async (_event, fontName) => {
   // Versuche System-Fonts zu laden

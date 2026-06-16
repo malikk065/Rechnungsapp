@@ -57,6 +57,10 @@ contextBridge.exposeInMainWorld('api', {
   openDocument: (filePath) => ipcRenderer.invoke('documents:open', filePath),
   deleteDocumentFile: (filePath) => ipcRenderer.invoke('documents:delete', filePath),
 
+  // OCR — Beleg-Scan
+  pickReceiptImage: () => ipcRenderer.invoke('ocr:pickImage'),
+  scanReceipt: (payload) => ipcRenderer.invoke('ocr:scanReceipt', payload),
+
   // Events
   getEvents: () => ipcRenderer.invoke('events:getAll'),
   saveEvents: (events) => ipcRenderer.invoke('events:save', events),

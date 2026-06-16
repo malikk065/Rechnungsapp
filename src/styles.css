@@ -2296,3 +2296,52 @@ td {
   margin-left: 4px;
   color: white;
 }
+
+/* ============ Beleg-Scan ============ */
+.receipt-scan-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: var(--bg-tertiary);
+}
+.receipt-scan-zone:hover {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+#receipt-scan-idle {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+#receipt-scan-idle strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+#receipt-scan-idle p {
+  margin: 2px 0 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+#receipt-scan-busy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.receipt-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: receiptSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes receiptSpin {
+  to { transform: rotate(360deg); }
+}

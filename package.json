@@ -25,6 +25,18 @@
       "node_modules/dijkstrajs/**/*",
       "node_modules/pngjs/**/*",
       "node_modules/encode-utf8/**/*",
+      "node_modules/tesseract.js/**/*",
+      "node_modules/tesseract.js-core/**/*",
+      "node_modules/bmp-js/**/*",
+      "node_modules/idb-keyval/**/*",
+      "node_modules/is-url/**/*",
+      "node_modules/node-fetch/**/*",
+      "node_modules/whatwg-url/**/*",
+      "node_modules/tr46/**/*",
+      "node_modules/webidl-conversions/**/*",
+      "node_modules/regenerator-runtime/**/*",
+      "node_modules/wasm-feature-detect/**/*",
+      "node_modules/zlibjs/**/*",
       "build/icon.png"
     ],
     "mac": {
@@ -72,7 +84,8 @@
     "firebase": "^10.14.1",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "electron": "^35.0.0",
