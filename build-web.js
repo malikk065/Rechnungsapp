@@ -109,7 +109,21 @@ if (!oldScripts.test(html)) {
 }
 html = html.replace(oldScripts, newScripts);
 
+// 2d. Cache-Busting: Versionsnummer an alle lokalen CSS/JS hängen,
+//     damit der Browser nach jedem Build garantiert die neuen Dateien lädt.
+const BUILD = Date.now().toString(36);
+const localAssets = [
+  'styles.css', 'mobile.css',
+  'api-shim.js', 'firebase-config.js', 'store.js',
+  'zugferd.js', 'pdf-generator.js', 'renderer.js',
+];
+for (const asset of localAssets) {
+  // href="styles.css"  oder  src="store.js"  →  ...="styles.css?v=BUILD"
+  const re = new RegExp(`((?:href|src)=")(${asset.replace('.', '\\.')})(")`, 'g');
+  html = html.replace(re, `$1$2?v=${BUILD}$3`);
+}
+
 fs.writeFileSync(path.join(WEB, 'index.html'), html, 'utf8');
-console.log('✓ generiert: web/index.html');
+console.log(`✓ generiert: web/index.html (Build ${BUILD})`);
 
 console.log('\n✅ Web-App gebaut. Deploy mit:  npx firebase-tools deploy --only hosting');
