@@ -90,6 +90,9 @@ button, input, select, textarea, a, label,
   height: 100vh;
 }
 
+/* Hamburger-Button nur auf Mobile (mobile.css blendet ihn ein) */
+.mobile-menu-btn { display: none; }
+
 /* --- Sidebar --- */
 .sidebar {
   width: var(--sidebar-width);

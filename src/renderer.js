@@ -387,6 +387,20 @@ function switchTab(tabName) {
   if (tabName === 'shopping') renderShoppingList();
   if (tabName === 'orgs') renderOrgsList();
   if (tabName === 'projects') renderProjectsList();
+
+  // Mobile-Menü nach Auswahl schließen
+  closeMobileMenu();
+}
+
+// --- Mobile Navigation (Hamburger) ---
+function toggleMobileMenu() {
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebar) sidebar.classList.toggle('menu-open');
+}
+
+function closeMobileMenu() {
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebar) sidebar.classList.remove('menu-open');
 }
 
 // --- Toast (New) ---
