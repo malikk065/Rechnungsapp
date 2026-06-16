@@ -1,0 +1,165 @@
+/* ============================================================
+   Mobile / Responsive Layout für Zakflow Web-App
+   Wandelt die Desktop-Seitenleiste in eine mobiltaugliche
+   Navigation um. Greift nur auf kleinen Screens (<= 768px).
+   ============================================================ */
+
+@media (max-width: 768px) {
+  /* App: von horizontaler zu vertikaler Anordnung */
+  .app {
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh; /* dynamische Höhe (iOS Safari Adressleiste) */
+  }
+
+  /* Sidebar wird zur scrollbaren Top-Navigationsleiste */
+  .sidebar {
+    width: 100%;
+    flex-direction: column;
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    -webkit-app-region: none;
+    flex-shrink: 0;
+  }
+
+  .sidebar-header {
+    padding: 14px 16px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .platform-darwin .sidebar-header { padding-top: 14px; }
+
+  .app-title { font-size: 18px; }
+
+  .org-switcher {
+    padding: 0 16px 8px;
+  }
+
+  /* Nav-Liste: horizontal scrollbar */
+  .nav-list {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 10px 8px;
+    gap: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav-list::-webkit-scrollbar { display: none; }
+
+  .nav-item {
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 10px;
+    min-width: 64px;
+    flex-shrink: 0;
+    text-align: center;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .nav-item .nav-icon { font-size: 18px; }
+  .nav-item.active::before { display: none; }
+
+  /* Dark-Mode-Toggle ans Ende der Top-Bar */
+  .dark-mode-toggle {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    padding: 0;
+  }
+  .dark-mode-toggle span:not(.nav-icon) { display: none; }
+
+  /* Content: voller Platz, weniger Padding */
+  .content {
+    padding: 16px 14px 80px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Tab-Header: umbruchfreundlich */
+  .tab-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .tab-header h2 { font-size: 22px; }
+  .tab-header > div { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* Buttons griffiger */
+  .btn {
+    padding: 11px 16px;
+    font-size: 14px;
+  }
+
+  /* Formularzeilen untereinander */
+  .form-row {
+    flex-direction: column;
+    gap: 0;
+  }
+  .form-group { width: 100%; }
+
+  /* Stat-Karten: 2 pro Reihe */
+  .stats-row, .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px;
+  }
+  .stat-value { font-size: 18px; }
+  .stat-label { font-size: 11px; }
+
+  /* Modals: fast vollbild, von unten */
+  .modal.active { align-items: flex-end; }
+  .modal-content {
+    max-width: 100%;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 18px 18px 0 0;
+    margin: 0;
+    animation: slideUpModal 0.25s ease;
+  }
+  @keyframes slideUpModal {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  /* Tabellen horizontal scrollbar machen */
+  .data-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Projekt-Grid einspaltig */
+  #projects-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* PDF-Vorschau vollbild */
+  .pdf-preview-content {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  /* Inputs: 16px verhindert iOS-Zoom beim Fokus */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Auth-Box mobil */
+  .auth-box, .auth-box-wide {
+    width: 92%;
+    max-width: 92%;
+    padding: 28px 22px;
+  }
+}
+
+/* Sehr kleine Screens */
+@media (max-width: 380px) {
+  .stats-row, .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .nav-item { min-width: 58px; }
+}

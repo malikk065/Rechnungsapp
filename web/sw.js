@@ -1,22 +1,9 @@
-// Service Worker für Offline-Support
-const CACHE_NAME = 'rechnungsapp-v2';
-const URLS_TO_CACHE = [
-  './',
-  './index.html',
-  './styles.css',
-  './firebase-config.js',
-  './store.js',
-  './pdf-generator.js',
-  './app.js',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-];
+// Service Worker für Zakflow PWA
+// Strategie: network-first mit Cache-Fallback.
+// → Nutzer bekommen immer die neueste Version, offline läuft es per Cache weiter.
+const CACHE_NAME = 'zakflow-v3';
 
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(URLS_TO_CACHE))
-  );
   self.skipWaiting();
 });
 
@@ -24,22 +11,32 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
-  // Firebase/CDN requests: network first
-  if (event.request.url.includes('googleapis.com') ||
-      event.request.url.includes('gstatic.com') ||
-      event.request.url.includes('firestore')) {
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
-    return;
+  const req = event.request;
+  // Nur GET cachen
+  if (req.method !== 'GET') return;
+
+  // Firebase/Firestore: immer Netzwerk (Echtzeit-Daten)
+  const url = req.url;
+  if (url.includes('firestore') || url.includes('googleapis.com') || url.includes('identitytoolkit')) {
+    return; // Standard-Netzwerkverhalten
   }
 
-  // App files: cache first, then network
+  // App-Dateien + CDN: network-first, bei Offline aus Cache
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    fetch(req)
+      .then(res => {
+        // Erfolgreiche Antworten in den Cache legen
+        if (res && res.status === 200 && (res.type === 'basic' || res.type === 'cors')) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, copy)).catch(() => {});
+        }
+        return res;
+      })
+      .catch(() => caches.match(req).then(c => c || caches.match('./index.html')))
   );
 });
