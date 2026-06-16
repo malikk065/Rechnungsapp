@@ -1392,6 +1392,16 @@
               <option value="regelbesteuerung">Regelbesteuerung - MwSt ausweisen</option>
             </select>
           </div>
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="settings-zugferd-enabled" style="width:16px;height:16px;cursor:pointer;">
+              <span>🇪🇺 E-Rechnung (ZUGFeRD / Factur-X) in alle Rechnungs-PDFs einbetten</span>
+            </label>
+            <p style="color:var(--text-tertiary);font-size:12px;margin:6px 0 0 24px;">
+              Versteckte XML-Datei in der PDF — Empfänger-Software kann die Rechnung automatisch einlesen.
+              Pflicht ab 2025 für B2B-Empfang, ab 2028 auch für Kleinunternehmer beim Versand.
+            </p>
+          </div>
 
           <h3>Spendenquittung</h3>
           <p style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;">Angaben für die Zuwendungsbestätigung (§10b EStG).</p>
@@ -1623,6 +1633,7 @@
   <script src="../node_modules/firebase/firebase-auth-compat.js" onerror="window._scriptErrors.push('firebase-auth')"></script>
   <script src="firebase-config.js" onerror="window._scriptErrors.push('firebase-config')"></script>
   <script src="store.js" onerror="window._scriptErrors.push('store')"></script>
+  <script src="zugferd.js" onerror="window._scriptErrors.push('zugferd')"></script>
   <script src="pdf-generator.js" onerror="window._scriptErrors.push('pdf-generator')"></script>
   <script src="renderer.js" onerror="window._scriptErrors.push('renderer')"></script>
 </body>

@@ -1041,6 +1041,16 @@ async function exportInvoicePDF(invoiceId, skipDialog = false) {
     }
   }
 
+  // ZUGFeRD / Factur-X XML generieren (nur für Rechnungen, nicht für Gutschriften → eigentlich auch möglich, aber selten genutzt)
+  let zugferdXml = null;
+  if (settings.zugferdEnabled && typeof window.generateFacturXXML === 'function') {
+    try {
+      zugferdXml = window.generateFacturXXML({ invoice: inv, settings, customer, totals });
+    } catch (e) {
+      console.warn('ZUGFeRD-XML konnte nicht erzeugt werden:', e);
+    }
+  }
+
   try {
     const pdfBytes = await generateInvoicePDF({
       invoice: inv,
@@ -1050,6 +1060,7 @@ async function exportInvoicePDF(invoiceId, skipDialog = false) {
       logoData,
       signatureData,
       qrData,
+      zugferdXml,
     });
 
     // Immer automatisch in OneDrive/Daten-Ordner speichern
@@ -1201,6 +1212,8 @@ async function renderSettingsForm() {
   document.getElementById('settings-tax-mode').value = s.taxMode || 'kleinunternehmer';
   const accHolderEl = document.getElementById('settings-account-holder');
   if (accHolderEl) accHolderEl.value = s.company.accountHolder || '';
+  const zugferdEl = document.getElementById('settings-zugferd-enabled');
+  if (zugferdEl) zugferdEl.checked = !!s.zugferdEnabled;
   document.getElementById('settings-bank-name').value = s.company.bankName || '';
   document.getElementById('settings-iban').value = s.company.iban || '';
   document.getElementById('settings-bic').value = s.company.bic || '';
@@ -1365,6 +1378,7 @@ async function saveSettingsForm() {
       bic: document.getElementById('settings-bic').value.trim(),
     },
     taxMode: document.getElementById('settings-tax-mode').value,
+    zugferdEnabled: !!(document.getElementById('settings-zugferd-enabled') || {}).checked,
     invoicePrefix: document.getElementById('settings-invoice-prefix').value.trim() || 'RE',
     nextInvoiceNumber: parseInt(document.getElementById('settings-next-number').value) || 1,
     logoPath: store.settings.logoPath || '',

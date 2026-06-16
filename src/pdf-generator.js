@@ -1,8 +1,8 @@
 // PDF Generator mit pdf-lib
 // pdf-lib wird als UMD-Script im HTML vor diesem Skript geladen
 
-async function generateInvoicePDF({ invoice, settings, customer, totals, logoData, signatureData, qrData }) {
-  const { PDFDocument, rgb, StandardFonts } = PDFLib;
+async function generateInvoicePDF({ invoice, settings, customer, totals, logoData, signatureData, qrData, zugferdXml }) {
+  const { PDFDocument, rgb, StandardFonts, AFRelationship } = PDFLib;
 
   const doc = await PDFDocument.create();
   const A4 = [595.28, 841.89];
@@ -577,6 +577,46 @@ async function generateInvoicePDF({ invoice, settings, customer, totals, logoDat
         y: footerY + 18,
         size: 7, font: fontRegular, color: gray,
       });
+    }
+  }
+
+  // =====================
+  // ZUGFeRD / Factur-X XML als Anhang einbetten
+  // =====================
+  if (zugferdXml) {
+    try {
+      const xmlBytes = new TextEncoder().encode(zugferdXml);
+      const attachOpts = {
+        mimeType: 'application/xml',
+        description: 'Factur-X XML (EN16931)',
+        creationDate: new Date(),
+        modificationDate: new Date(),
+      };
+      if (AFRelationship && AFRelationship.Alternative) {
+        attachOpts.afRelationship = AFRelationship.Alternative;
+      }
+      await doc.attach(xmlBytes, 'factur-x.xml', attachOpts);
+
+      // PDF-Metadaten setzen (für PDF/A-3-ähnliche Konformität)
+      doc.setTitle(`Rechnung ${invoice.number}`);
+      doc.setAuthor(settings.company && settings.company.name || '');
+      doc.setSubject('Factur-X / ZUGFeRD E-Rechnung (EN16931)');
+      doc.setKeywords(['Factur-X', 'ZUGFeRD', 'E-Rechnung', invoice.number]);
+      doc.setProducer('Zakflow');
+      doc.setCreator('Zakflow');
+
+      // Sichtbares Badge auf erster Seite (unten links über dem Footer)
+      const firstPage = ctx.pages[0];
+      const badgeText = 'E-Rechnung enthalten (Factur-X / ZUGFeRD)';
+      const badgeY = 56;
+      firstPage.drawText('EU', {
+        x: marginLeft, y: badgeY, size: 7, font: fontBold, color: rgb(0, 0.27, 0.67),
+      });
+      firstPage.drawText(badgeText, {
+        x: marginLeft + 16, y: badgeY, size: 7, font: fontRegular, color: gray,
+      });
+    } catch (e) {
+      console.warn('ZUGFeRD-Anhang konnte nicht eingebettet werden:', e);
     }
   }
 
